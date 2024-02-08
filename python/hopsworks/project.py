@@ -26,7 +26,7 @@ from hopsworks.core import (
     kafka_api,
     opensearch_api,
     environment_api,
-    flink_cluster_api,
+    flink_cluster_api, decision_engine_api,
 )
 
 
@@ -67,6 +67,7 @@ class Project:
         self._git_api = git_api.GitApi(project_id, project_name)
         self._dataset_api = dataset_api.DatasetApi(project_id)
         self._environment_api = environment_api.EnvironmentApi(project_id, project_name)
+        self._decision_engine_api = decision_engine_api.DecisionEngineApi(project_id, project_name)
 
     @classmethod
     def from_response_json(cls, json_dict):
@@ -231,6 +232,14 @@ class Project:
             `EnvironmentApi`: The Python Environment Api handle
         """
         return self._environment_api
+
+    def get_decision_engine_api(self):
+        """Get the decision engine api handle for the project.
+
+        # Returns
+            `DecisionEngine`: The Decision Engine Api handle
+        """
+        return self._decision_engine_api
 
     def json(self):
         return json.dumps(self, cls=util.Encoder)
