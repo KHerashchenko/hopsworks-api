@@ -2,8 +2,8 @@ from hopsworks.decision_engine import RecommendationDecisionEngine, SearchDecisi
 
 
 class DecisionEngineEngine:
-    def __init__(self, fs):
-        self.fs = fs
+    def __init__(self):
+        pass
 
     def setup_decision_engine(self, configs_dict):
 
