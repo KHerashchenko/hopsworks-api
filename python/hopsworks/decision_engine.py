@@ -49,7 +49,7 @@ class DecisionEngine(ABC):
 
 class RecommendationDecisionEngine(DecisionEngine):
     def build_catalog(self):
-        catalog_config = self._configs_dict['catalog_config']
+        catalog_config = self._configs_dict['catalog']
 
         fg = self._fs.create_feature_group(
             name=catalog_config['feature_group_name'],
