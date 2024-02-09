@@ -2,7 +2,8 @@ from abc import ABC, abstractmethod
 import humps
 import pandas
 
-from hsfs import connection
+from hsfs import connection as hsfs_conn
+from hsml import connection as hsml_conn
 
 
 class DecisionEngine(ABC):
@@ -10,8 +11,8 @@ class DecisionEngine(ABC):
         self._name = configs_dict['name']
         self._configs_dict = configs_dict
 
-        self._fs = connection().get_feature_store(configs_dict['feature_store'])
-        self._mr = connection().get_model_registry()
+        self._fs = hsfs_conn().get_feature_store(configs_dict['feature_store'])
+        self._mr = hsml_conn().get_model_registry()
 
     @classmethod
     def from_response_json(cls, json_dict, project_id, project_name):
