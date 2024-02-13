@@ -81,17 +81,29 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         # Creating catalog FG
         catalog_config = self._configs_dict['catalog']
+        retrieval_config = self._configs_dict['model_configuration']['retrieval_model']
+        catalog_idx_config = CatalogIndexConfig(**retrieval_config['catalog_index_config'])
 
         fg = self._fs.get_or_create_feature_group(
             name=catalog_config['feature_group_name'],
             description='Catalog for the Decision Engine project',
-            version=1,
             primary_key=catalog_config['primary_key'],
             online_enabled=True,
         )
 
         self._catalog_df = pd.read_csv(catalog_config['file_path'])
+
+        pk_column_to_str = self._catalog_df.columns[catalog_idx_config.item_id_index]
+        self._catalog_df[pk_column_to_str] = self._catalog_df[pk_column_to_str].astype(str)
+
         fg.insert(self._catalog_df)
+
+        items_fv = self._fs.get_or_create_feature_view(
+            name=catalog_config['feature_group_name'],
+            query=fg.select_all(),
+        )
+
+        items_fv.create_training_data(write_options={"use_spark": True})
 
     def run_data_validation(self):
         pass
