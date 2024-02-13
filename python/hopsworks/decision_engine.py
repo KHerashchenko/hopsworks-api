@@ -29,7 +29,7 @@ class DecisionEngine(ABC):
 
         self._fs = hsfs_conn().get_feature_store(configs_dict['feature_store'])
         self._mr = hsml_conn().get_model_registry()
-        self._client = client.get_instance()
+        self._client = client.init("hopsworks")
         self._os_api = opensearch_api.OpenSearchApi(self._client._project_id, self._client._project_name)
 
     @classmethod
