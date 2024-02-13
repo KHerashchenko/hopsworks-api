@@ -14,7 +14,7 @@ from opensearchpy.helpers import bulk
 
 import tensorflow as tf
 from tensorflow.keras.layers.experimental.preprocessing import StringLookup
-tf.keras.backend.set_floatx('float64')
+# tf.keras.backend.set_floatx('float64') # didnt solve the error
 
 from hsml.schema import Schema
 from hsml.model_schema import ModelSchema
@@ -98,6 +98,10 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         pk_column_to_str = self._catalog_df.columns[catalog_idx_config.item_id_index]
         self._catalog_df[pk_column_to_str] = self._catalog_df[pk_column_to_str].astype(str)
+
+        # todo tensorflow errors if col is of type float64, expecting float32
+        price_column_to_float32 = self._catalog_df.columns[catalog_idx_config.price_index]
+        self._catalog_df[price_column_to_float32] = self._catalog_df[price_column_to_float32].astype("float32")
 
         fg.insert(self._catalog_df)
 
