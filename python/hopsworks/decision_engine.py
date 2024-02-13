@@ -14,6 +14,8 @@ from opensearchpy.helpers import bulk
 
 import tensorflow as tf
 from tensorflow.keras.layers.experimental.preprocessing import StringLookup
+tf.keras.backend.set_floatx('float64')
+
 from hsml.schema import Schema
 from hsml.model_schema import ModelSchema
 
