@@ -7,6 +7,8 @@ from dataclasses import dataclass
 import humps
 import pandas as pd
 
+from hopsworks import client
+from hopsworks.core import opensearch_api
 from opensearchpy import OpenSearch
 from opensearchpy.helpers import bulk
 
@@ -27,7 +29,8 @@ class DecisionEngine(ABC):
 
         self._fs = hsfs_conn().get_feature_store(configs_dict['feature_store'])
         self._mr = hsml_conn().get_model_registry()
-        self._os = hsfs_conn().get_opensearch_api()
+        self._client = client.get_instance()
+        self._os_api = opensearch_api.OpenSearchApi(self._client._project_id, self._client._project_name)
 
     @classmethod
     def from_response_json(cls, json_dict, project_id, project_name):
@@ -139,12 +142,12 @@ class RecommendationDecisionEngine(DecisionEngine):
     def build_vector_db(self):
 
         # Creating Opensearch index
-        client = OpenSearch(**self._os.get_default_py_config())
+        os_client = OpenSearch(**self._os_api.get_default_py_config())
         catalog_config = self._configs_dict['catalog']
         retrieval_config = self._configs_dict['model_configuration']['retrieval_model']
 
-        index_name = self._os.get_project_index(catalog_config['feature_group_name'])
-        index_exists = client.indices.exists(index_name)
+        index_name = self._os_api.get_project_index(catalog_config['feature_group_name'])
+        index_exists = os_client.indices.exists(index_name)
 
         if not index_exists:
             logging.info(f"Opensearch index name {index_name} does not exist. Creating.")
@@ -171,7 +174,7 @@ class RecommendationDecisionEngine(DecisionEngine):
                     }
                 }
             }
-            response = client.indices.create(index_name, body=index_body)
+            response = os_client.indices.create(index_name, body=index_body)
 
         model = self._mr.get_model(
             name="embedding_model",
@@ -203,7 +206,7 @@ class RecommendationDecisionEngine(DecisionEngine):
                     }
                 })
 
-        bulk(client, actions)
+        bulk(os_client, actions)
 
 
     def build_deployments(self):
