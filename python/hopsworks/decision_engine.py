@@ -89,6 +89,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             description='Catalog for the Decision Engine project',
             primary_key=catalog_config['primary_key'],
             online_enabled=True,
+            version=1
         )
 
         self._catalog_df = pd.read_csv(catalog_config['file_path'])
@@ -101,6 +102,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         items_fv = self._fs.get_or_create_feature_view(
             name=catalog_config['feature_group_name'],
             query=fg.select_all(),
+            version=1
         )
 
         items_fv.create_training_data(write_options={"use_spark": True})
