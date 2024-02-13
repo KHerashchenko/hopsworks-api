@@ -1,12 +1,17 @@
+import logging
 import pickle
 from abc import ABC, abstractmethod
 from typing import List
+from dataclasses import dataclass
 
 import humps
-import pandas
+import pandas as pd
+
+from opensearchpy import OpenSearch
+from opensearchpy.helpers import bulk
+
 import tensorflow as tf
 from tensorflow.keras.layers.experimental.preprocessing import StringLookup
-from dataclasses import dataclass
 from hsml.schema import Schema
 from hsml.model_schema import ModelSchema
 
@@ -22,6 +27,7 @@ class DecisionEngine(ABC):
 
         self._fs = hsfs_conn().get_feature_store(configs_dict['feature_store'])
         self._mr = hsml_conn().get_model_registry()
+        self._os = hsfs_conn().get_opensearch_api()
 
     @classmethod
     def from_response_json(cls, json_dict, project_id, project_name):
@@ -56,12 +62,18 @@ class DecisionEngine(ABC):
         pass
 
     @abstractmethod
+    def build_vector_db(self):
+        pass
+
+    @abstractmethod
     def build_deployments(self):
         pass
 
 
 class RecommendationDecisionEngine(DecisionEngine):
     def build_catalog(self):
+
+        # Creating catalog FG
         catalog_config = self._configs_dict['catalog']
 
         fg = self._fs.create_feature_group(
@@ -72,8 +84,8 @@ class RecommendationDecisionEngine(DecisionEngine):
             online_enabled=True,
         )
 
-        self._catalog_df = pandas.read_csv(catalog_config['file_path'])
-        # fg.insert(self._catalog_df)
+        self._catalog_df = pd.read_csv(catalog_config['file_path'])
+        fg.insert(self._catalog_df)
 
     def run_data_validation(self):
         pass
@@ -124,8 +136,77 @@ class RecommendationDecisionEngine(DecisionEngine):
                                                description="Ranking model that scores item candidates")
         ranking_model.save(model_path='ranking_model.pkl')
 
+    def build_vector_db(self):
+
+        # Creating Opensearch index
+        client = OpenSearch(**self._os.get_default_py_config())
+        catalog_config = self._configs_dict['catalog']
+        retrieval_config = self._configs_dict['model_configuration']['retrieval_model']
+
+        index_name = self._os.get_project_index(catalog_config['feature_group_name'])
+        index_exists = client.indices.exists(index_name)
+
+        if not index_exists:
+            logging.info(f"Opensearch index name {index_name} does not exist. Creating.")
+            index_body = {
+                "settings": {
+                    "knn": True,
+                    "knn.algo_param.ef_search": 100,
+                },
+                "mappings": {
+                    "properties": {
+                        "my_vector1": {
+                            "type": "knn_vector",
+                            "dimension": retrieval_config['item_space_dim'],
+                            "method": {
+                                "name": "hnsw",
+                                "space_type": retrieval_config['opensearch_index']['space_type'],
+                                "engine": retrieval_config['engine']['faiss'],
+                                "parameters": {
+                                    "ef_construction": 256,
+                                    "m": 48
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            response = client.indices.create(index_name, body=index_body)
+
+        model = self._mr.get_model(
+            name="embedding_model",
+            version=1,
+        )
+        model_path = model.download()
+        item_model = tf.saved_model.load(model_path)
+
+        model_schema = model.model_schema['input_schema']['columnar_schema']
+        item_features = [feat['name'] for feat in model_schema]
+
+        items_ds = tf.data.Dataset.from_tensor_slices({col: self._catalog_df[col] for col in self._catalog_df})
+
+        item_embeddings = items_ds.batch(2048).map(lambda x: (x[catalog_config['primary_key']], item_model(x)))
+
+        actions = []
+
+        for batch in item_embeddings:
+            item_id_list, embedding_list = batch
+            item_id_list = item_id_list.numpy().astype(int)
+            embedding_list = embedding_list.numpy()
+
+            for item_id, embedding in zip(item_id_list, embedding_list):
+                actions.append({
+                    "_index": index_name,
+                    "_id": str(item_id),
+                    "_source": {
+                        "my_vector": embedding,
+                    }
+                })
+
+        bulk(client, actions)
+
+
     def build_deployments(self):
-        # Implement logic to deploy recommendation engine models
         pass
 
 

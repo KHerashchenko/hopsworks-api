@@ -18,4 +18,5 @@ class DecisionEngineEngine:
         # # Build project components using the builder
         builder.build_catalog()
         builder.build_models()
+        builder.build_vector_db()
         builder.build_deployments()
