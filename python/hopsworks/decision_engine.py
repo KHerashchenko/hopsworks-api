@@ -166,7 +166,7 @@ class RecommendationDecisionEngine(DecisionEngine):
                             "method": {
                                 "name": "hnsw",
                                 "space_type": retrieval_config['opensearch_index']['space_type'],
-                                "engine": retrieval_config['engine']['faiss'],
+                                "engine": retrieval_config['opensearch_index']['engine'],
                                 "parameters": {
                                     "ef_construction": 256,
                                     "m": 48
