@@ -27,6 +27,7 @@ class DecisionEngine(ABC):
         self._configs_dict = configs_dict
         self._catalog_df = None
 
+        # todo refine api handles calls
         self._fs = hsfs_conn().get_feature_store(configs_dict['feature_store'])
         self._mr = hsml_conn().get_model_registry()
 
@@ -190,7 +191,7 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         items_ds = tf.data.Dataset.from_tensor_slices({col: self._catalog_df[col] for col in self._catalog_df})
 
-        item_embeddings = items_ds.batch(2048).map(lambda x: (x[catalog_config['primary_key']], item_model(x)))
+        item_embeddings = items_ds.batch(2048).map(lambda x: (x[catalog_config['primary_key'][0]], item_model(x)))
 
         actions = []
 
