@@ -105,13 +105,13 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         fg.insert(self._catalog_df)
 
-        items_fv = self._fs.get_or_create_feature_view(
+        fv = self._fs.get_or_create_feature_view(
             name=catalog_config['feature_group_name'],
             query=fg.select_all(),
             version=1
         )
 
-        items_fv.create_training_data(write_options={"use_spark": True})
+        fv.create_training_data(write_options={"use_spark": True})
 
     def run_data_validation(self):
         pass
@@ -225,7 +225,7 @@ class RecommendationDecisionEngine(DecisionEngine):
                     "_index": index_name,
                     "_id": str(item_id),
                     "_source": {
-                        "my_vector": embedding,
+                        "my_vector1": embedding,
                     }
                 })
 
