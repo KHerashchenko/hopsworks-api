@@ -174,6 +174,9 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         index_name = self._opensearch_api.get_project_index(catalog_config['feature_group_name'])
         index_exists = os_client.indices.exists(index_name)
+        # dev:
+        if index_exists:
+            os_client.indices.delete(index_name)
 
         if not index_exists:
             logging.info(f"Opensearch index name {index_name} does not exist. Creating.")
@@ -214,7 +217,7 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         items_ds = tf.data.Dataset.from_tensor_slices({col: self._catalog_df[col] for col in self._catalog_df})
 
-        item_embeddings = items_ds.batch(2048).map(lambda x: (x[catalog_config['primary_key'][0]], item_model(x)))
+        item_embeddings = items_ds.batch(2048).map(lambda x: (x[catalog_config['primary_key'][0]], model(x)))
 
         actions = []
 
