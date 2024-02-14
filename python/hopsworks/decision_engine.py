@@ -19,6 +19,7 @@ from tensorflow.keras.layers.experimental.preprocessing import StringLookup
 
 from hsml.schema import Schema
 from hsml.model_schema import ModelSchema
+from hsml.transformer import Transformer
 
 from hsfs import connection as hsfs_conn
 from hsml import connection as hsml_conn
@@ -234,7 +235,34 @@ class RecommendationDecisionEngine(DecisionEngine):
         bulk(os_client, actions)
 
     def build_deployments(self):
-        pass
+        # copy transformer file into Hopsworks File System
+        # uploaded_file_path = self._dataset_api.upload("ranking_transformer.py", "Resources", overwrite=True)
+        # transformer_script_path = os.path.join("/Projects", self._client._project_name, uploaded_file_path).replace('\\', '/')
+
+        # copy predictor file into Hopsworks File System
+        # uploaded_file_path = dataset_api.upload("ranking_predictor.py", "Resources", overwrite=True)
+        # predictor_script_path = os.path.join("/Projects", self._client._project_name, uploaded_file_path).replace('\\', '/')
+
+        transformer_script_path = os.path.join("/Projects", self._client._project_name, "ranking_transformer.py").replace('\\', '/')
+        predictor_script_path = os.path.join("/Projects", self._client._project_name, "ranking_predictor.py").replace('\\', '/')
+
+        ranking_deployment_name = "rankingdeployment"
+        ranking_model = self._mr.get_model("ranking_model", version=1)
+
+        # define transformer
+        ranking_transformer=Transformer(
+            script_file=transformer_script_path, 
+            resources={"num_instances": 1},
+        )
+        
+        # deploy ranking model
+        ranking_deployment = ranking_model.deploy(
+            name=ranking_deployment_name,
+            description="Deployment that search for item candidates and scores them based on customer metadata",
+            script_file=predictor_script_path,
+            resources={"num_instances": 1},
+            transformer=ranking_transformer,
+        )
 
 
 @dataclass
