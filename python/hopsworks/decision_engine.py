@@ -4,11 +4,12 @@ from abc import ABC, abstractmethod
 from typing import List
 from dataclasses import dataclass
 
+import os
 import humps
 import pandas as pd
 
 from hopsworks import client
-from hopsworks.core import opensearch_api
+from hopsworks.core import opensearch_api, dataset_api
 from opensearchpy import OpenSearch
 from opensearchpy.helpers import bulk
 
@@ -35,7 +36,8 @@ class DecisionEngine(ABC):
 
         client.init("hopsworks")
         self._client = client.get_instance()
-        self._os_api = opensearch_api.OpenSearchApi(self._client._project_id, self._client._project_name)
+        self._opensearch_api = opensearch_api.OpenSearchApi(self._client._project_id, self._client._project_name)
+        self._dataset_api = dataset_api.DatasetApi(self._client._project_id)
 
     @classmethod
     def from_response_json(cls, json_dict, project_id, project_name):
@@ -165,11 +167,11 @@ class RecommendationDecisionEngine(DecisionEngine):
     def build_vector_db(self):
 
         # Creating Opensearch index
-        os_client = OpenSearch(**self._os_api.get_default_py_config())
+        os_client = OpenSearch(**self._opensearch_api.get_default_py_config())
         catalog_config = self._configs_dict['catalog']
         retrieval_config = self._configs_dict['model_configuration']['retrieval_model']
 
-        index_name = self._os_api.get_project_index(catalog_config['feature_group_name'])
+        index_name = self._opensearch_api.get_project_index(catalog_config['feature_group_name'])
         index_exists = os_client.indices.exists(index_name)
 
         if not index_exists:
@@ -223,14 +225,13 @@ class RecommendationDecisionEngine(DecisionEngine):
             for item_id, embedding in zip(item_id_list, embedding_list):
                 actions.append({
                     "_index": index_name,
-                    "_id": str(item_id),
+                    "_id": item_id,
                     "_source": {
                         "my_vector1": embedding,
                     }
                 })
-
+        print("Actions to be bulked: ", actions)
         bulk(os_client, actions)
-
 
     def build_deployments(self):
         pass
