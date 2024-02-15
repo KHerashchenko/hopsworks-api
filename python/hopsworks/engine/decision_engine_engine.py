@@ -21,3 +21,4 @@ class DecisionEngineEngine:
         builder.build_models()
         builder.build_vector_db()
         builder.build_deployments()
+        builder.build_jobs()

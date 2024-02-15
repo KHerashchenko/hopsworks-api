@@ -8,7 +8,7 @@ import os
 import humps
 import pandas as pd
 
-from hopsworks import client, job
+from hopsworks import client
 from hopsworks.core import opensearch_api, dataset_api, kafka_api, job_api
 from opensearchpy import OpenSearch
 from opensearchpy.helpers import bulk
@@ -38,7 +38,7 @@ class DecisionEngine(ABC):
         self._opensearch_api = opensearch_api.OpenSearchApi(self._client._project_id, self._client._project_name)
         self._dataset_api = dataset_api.DatasetApi(self._client._project_id)
         self._kafka_api = kafka_api.KafkaApi(self._client._project_id, self._client._project_name)
-        self._jobs_api = job_api.JobApi(self._client._project_id, self._client._project_name)
+        self._jobs_api = job_api.JobsApi(self._client._project_id, self._client._project_name)
 
         self._fs = hsfs_conn().get_feature_store(self._client._project_name + "_featurestore")
         self._mr = hsml_conn().get_model_registry()
@@ -317,6 +317,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         spark_config = self._jobs_api.get_configuration("PYSPARK")
         spark_config['appPath'] = "/Resources/logs_consumer_job.py"
         job = self._jobs_api.create_job("logs_consumer_job", spark_config)
+        job.schedule(cron_expression="0 0 * * *")
 
 
 @dataclass
