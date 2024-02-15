@@ -317,7 +317,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         spark_config = self._jobs_api.get_configuration("PYSPARK")
         spark_config['appPath'] = "/Resources/logs_consumer_job.py"
         job = self._jobs_api.create_job("logs_consumer_job", spark_config)
-        job.schedule(cron_expression="0 0 * * *")
+        job.schedule(cron_expression="0 0 * * * *")
 
 
 @dataclass
