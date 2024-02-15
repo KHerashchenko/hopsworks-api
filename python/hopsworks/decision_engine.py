@@ -9,7 +9,7 @@ import humps
 import pandas as pd
 
 from hopsworks import client
-from hopsworks.core import opensearch_api, dataset_api
+from hopsworks.core import opensearch_api, dataset_api, kafka_api
 from opensearchpy import OpenSearch
 from opensearchpy.helpers import bulk
 
@@ -40,6 +40,7 @@ class DecisionEngine(ABC):
         self._client = client.get_instance()
         self._opensearch_api = opensearch_api.OpenSearchApi(self._client._project_id, self._client._project_name)
         self._dataset_api = dataset_api.DatasetApi(self._client._project_id)
+        self._kafka_api = kafka_api.KafkaApi(self._client._project_id, self._client._project_name)
 
     @classmethod
     def from_response_json(cls, json_dict, project_id, project_name):
@@ -246,27 +247,56 @@ class RecommendationDecisionEngine(DecisionEngine):
         # uploaded_file_path = dataset_api.upload("ranking_predictor.py", "Resources", overwrite=True)
         # predictor_script_path = os.path.join("/Projects", self._client._project_name, uploaded_file_path).replace('\\', '/')
 
-        transformer_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_transformer.py").replace('\\', '/')
-        predictor_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_predictor.py").replace('\\', '/')
+        # transformer_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_transformer.py").replace('\\', '/')
+        # predictor_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_predictor.py").replace('\\', '/')
+        #
+        # ranking_deployment_name = "rankingdeployment"
+        # ranking_model = self._mr.get_model("ranking_model", version=1)
+        #
+        # # define transformer
+        # ranking_transformer=Transformer(
+        #     script_file=transformer_script_path,
+        #     resources={"num_instances": 1},
+        # )
+        #
+        # # deploy ranking model
+        # ranking_deployment = ranking_model.deploy(
+        #     name=ranking_deployment_name,
+        #     description="Deployment that search for item candidates and scores them based on customer metadata",
+        #     script_file=predictor_script_path,
+        #     resources={"num_instances": 1},
+        #     transformer=ranking_transformer,
+        # )
 
-        ranking_deployment_name = "rankingdeployment"
-        ranking_model = self._mr.get_model("ranking_model", version=1)
+        # Creating deployment for logObservation endpoint
 
-        # define transformer
-        ranking_transformer=Transformer(
-            script_file=transformer_script_path, 
-            resources={"num_instances": 1},
-        )
-        
-        # deploy ranking model
-        ranking_deployment = ranking_model.deploy(
-            name=ranking_deployment_name,
-            description="Deployment that search for item candidates and scores them based on customer metadata",
-            script_file=predictor_script_path,
-            resources={"num_instances": 1},
-            transformer=ranking_transformer,
-        )
+        # copy redirector file into Hopsworks File System
+        # uploaded_file_path = dataset_api.upload("logObservations_redirect.py", "Resources", overwrite=True)
+        # predictor_script_path = os.path.join("/Projects", self._client._project_name, uploaded_file_path).replace('\\', '/')
+        redirector_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "logObservations_redirect.py").replace('\\', '/')
 
+        SCHEMA_NAME = "observations"
+        TOPIC_NAME = "logObservations5"
+
+        avro_schema = {
+            "type": "record",
+            "name": "observations",
+            "fields": []
+        }
+
+        self._kafka_api.create_schema(SCHEMA_NAME, avro_schema)
+        # dev:
+        try:
+            self._kafka_api._delete_topic(TOPIC_NAME)
+        except Exception:
+            pass
+        my_topic = self._kafka_api.create_topic(TOPIC_NAME, SCHEMA_NAME, 1, replicas=1, partitions=1)
+
+        model = self._mr.python.create_model("logObservations_redirect")
+        model.save(redirector_script_path)
+        predictor_script_path = os.path.join(model.version_path, "logObservations_redirect.py")
+        print(predictor_script_path)
+        deployment = model.deploy('observationsdeployment', script_file=predictor_script_path)
 
 @dataclass
 class CatalogIndexConfig:

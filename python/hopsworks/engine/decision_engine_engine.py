@@ -16,8 +16,8 @@ class DecisionEngineEngine:
             raise ValueError("Invalid use case specified in config")
 
         # # Build project components using the builder
-        builder.build_catalog()
-        builder.run_data_validation()
-        builder.build_models()
-        builder.build_vector_db()
+        # builder.build_catalog()
+        # builder.run_data_validation()
+        # builder.build_models()
+        # builder.build_vector_db()
         builder.build_deployments()
