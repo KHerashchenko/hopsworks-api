@@ -242,41 +242,42 @@ class RecommendationDecisionEngine(DecisionEngine):
         # copy transformer file into Hopsworks File System
         # uploaded_file_path = self._dataset_api.upload("ranking_transformer.py", "Resources", overwrite=True)
         # transformer_script_path = os.path.join("/Projects", self._client._project_name, uploaded_file_path).replace('\\', '/')
+        transformer_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_transformer.py").replace('\\', '/')
 
         # copy predictor file into Hopsworks File System
         # uploaded_file_path = dataset_api.upload("ranking_predictor.py", "Resources", overwrite=True)
         # predictor_script_path = os.path.join("/Projects", self._client._project_name, uploaded_file_path).replace('\\', '/')
 
-        # transformer_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_transformer.py").replace('\\', '/')
-        # predictor_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_predictor.py").replace('\\', '/')
-        #
-        # ranking_deployment_name = "rankingdeployment"
-        # ranking_model = self._mr.get_model("ranking_model", version=1)
-        #
-        # # define transformer
-        # ranking_transformer=Transformer(
-        #     script_file=transformer_script_path,
-        #     resources={"num_instances": 1},
-        # )
-        #
-        # # deploy ranking model
-        # ranking_deployment = ranking_model.deploy(
-        #     name=ranking_deployment_name,
-        #     description="Deployment that search for item candidates and scores them based on customer metadata",
-        #     script_file=predictor_script_path,
-        #     resources={"num_instances": 1},
-        #     transformer=ranking_transformer,
-        # )
+        predictor_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_predictor.py").replace('\\', '/')
+
+        ranking_deployment_name = "rankingdeployment"
+        ranking_model = self._mr.get_model("ranking_model", version=1)
+
+        # define transformer
+        ranking_transformer=Transformer(
+            script_file=transformer_script_path,
+            resources={"num_instances": 1},
+        )
+
+        # deploy ranking model
+        ranking_deployment = ranking_model.deploy(
+            name=ranking_deployment_name,
+            description="Deployment that search for item candidates and scores them based on customer metadata",
+            script_file=predictor_script_path,
+            resources={"num_instances": 1},
+            transformer=ranking_transformer,
+        )
 
         # Creating deployment for logObservation endpoint
 
         # copy redirector file into Hopsworks File System
         # uploaded_file_path = dataset_api.upload("logObservations_redirect.py", "Resources", overwrite=True)
         # predictor_script_path = os.path.join("/Projects", self._client._project_name, uploaded_file_path).replace('\\', '/')
+
         redirector_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "logObservations_redirect.py").replace('\\', '/')
 
-        SCHEMA_NAME = '_'.join([self._configs_dict['name'],"observations"])
-        TOPIC_NAME = '_'.join([self._configs_dict['name'] + "logObservations"])
+        SCHEMA_NAME = '_'.join([self._configs_dict['name'], "observations"])
+        TOPIC_NAME = '_'.join([self._configs_dict['name'], "logObservations"])
 
         avro_schema = {
             "type": "record",
@@ -293,9 +294,8 @@ class RecommendationDecisionEngine(DecisionEngine):
         my_topic = self._kafka_api.create_topic(TOPIC_NAME, SCHEMA_NAME, 1, replicas=1, partitions=1)
 
         model = self._mr.python.create_model("logObservations_redirect")
-        model.save(redirector_script_path)
+        model.save(redirector_script_path, keep_original_files=True)
         predictor_script_path = os.path.join(model.version_path, "logObservations_redirect.py")
-        print(predictor_script_path)
         deployment = model.deploy('observationsdeployment', script_file=predictor_script_path)
 
 @dataclass
