@@ -30,6 +30,7 @@ class DecisionEngine(ABC):
         self._name = configs_dict['name']
         self._configs_dict = configs_dict
         self._catalog_df = None
+        self._embedding_model = None
 
         # todo refine api handles calls
         self._fs = hsfs_conn().get_feature_store(configs_dict['feature_store'])
@@ -131,9 +132,9 @@ class RecommendationDecisionEngine(DecisionEngine):
         name_list = self._catalog_df.iloc[:, catalog_idx_config.name_index].astype(str).unique().tolist()
         category_list = self._catalog_df.iloc[:, catalog_idx_config.category_index].astype(str).unique().tolist()
 
-        item_model = ItemCatalogEmbedding(item_id_list, name_list, category_list, catalog_idx_config, emb_dim)
+        self._embedding_model = ItemCatalogEmbedding(item_id_list, name_list, category_list, catalog_idx_config, emb_dim)
 
-        tf.saved_model.save(item_model, "embedding_model")
+        tf.saved_model.save(self._embedding_model, "embedding_model")
 
         embedding_model_input_schema = Schema(self._catalog_df)
         embedding_model_output_schema = Schema([{
@@ -210,14 +211,13 @@ class RecommendationDecisionEngine(DecisionEngine):
             version=1,
         )
         model_path = model.download()
-        item_model = tf.saved_model.load(model_path)
 
         model_schema = model.model_schema['input_schema']['columnar_schema']
         item_features = [feat['name'] for feat in model_schema]
 
         items_ds = tf.data.Dataset.from_tensor_slices({col: self._catalog_df[col] for col in self._catalog_df})
 
-        item_embeddings = items_ds.batch(2048).map(lambda x: (x[catalog_config['primary_key'][0]], model(x)))
+        item_embeddings = items_ds.batch(2048).map(lambda x: (x[catalog_config['primary_key'][0]], self._embedding_model(x)))
 
         actions = []
 
