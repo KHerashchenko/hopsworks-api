@@ -8,8 +8,8 @@ import os
 import humps
 import pandas as pd
 
-from hopsworks import client
-from hopsworks.core import opensearch_api, dataset_api, kafka_api
+from hopsworks import client, job
+from hopsworks.core import opensearch_api, dataset_api, kafka_api, job_api
 from opensearchpy import OpenSearch
 from opensearchpy.helpers import bulk
 
@@ -33,14 +33,15 @@ class DecisionEngine(ABC):
         self._embedding_model = None
 
         # todo refine api handles calls
-        self._fs = hsfs_conn().get_feature_store(configs_dict['feature_store'])
-        self._mr = hsml_conn().get_model_registry()
-
         client.init("hopsworks")
         self._client = client.get_instance()
         self._opensearch_api = opensearch_api.OpenSearchApi(self._client._project_id, self._client._project_name)
         self._dataset_api = dataset_api.DatasetApi(self._client._project_id)
         self._kafka_api = kafka_api.KafkaApi(self._client._project_id, self._client._project_name)
+        self._jobs_api = job_api.JobApi(self._client._project_id, self._client._project_name)
+
+        self._fs = hsfs_conn().get_feature_store(self._client._project_name + "_featurestore")
+        self._mr = hsml_conn().get_model_registry()
 
     @classmethod
     def from_response_json(cls, json_dict, project_id, project_name):
@@ -80,6 +81,10 @@ class DecisionEngine(ABC):
 
     @abstractmethod
     def build_deployments(self):
+        pass
+
+    @abstractmethod
+    def build_jobs(self):
         pass
 
 
@@ -298,6 +303,21 @@ class RecommendationDecisionEngine(DecisionEngine):
         model.save(redirector_script_path, keep_original_files=True)
         predictor_script_path = os.path.join(model.version_path, "logObservations_redirect.py")
         deployment = model.deploy('observationsdeployment', script_file=predictor_script_path)
+
+    def build_jobs(self):
+
+        # The job retraining the ranking model. Compares the size of current training dataset and "observations" FG.
+        # If diff > 10%, creates new training dataset, retrains ranking model and updates deployment.
+        spark_config = self._jobs_api.get_configuration("PYSPARK")
+        spark_config['appPath'] = "/Resources/retrain_ranking_model_job.py"
+        job = self._jobs_api.create_job("retrain_ranking_model_job", spark_config)
+
+        # The job for consuming observations from Kafka topic. Runs on schedule, inserts stream into observations FG.
+        # On the first run, autodetects event schema and creates "observations" FG, "training" FV and empty training dataset.
+        spark_config = self._jobs_api.get_configuration("PYSPARK")
+        spark_config['appPath'] = "/Resources/logs_consumer_job.py"
+        job = self._jobs_api.create_job("logs_consumer_job", spark_config)
+
 
 @dataclass
 class CatalogIndexConfig:
