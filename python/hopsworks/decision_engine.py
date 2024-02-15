@@ -301,13 +301,17 @@ class ItemCatalogEmbedding(tf.keras.Model):
         ])
 
         self.normalized_price = tf.keras.layers.Normalization(axis=None)
+
         self.category_tokenizer = tf.keras.layers.StringLookup(
             vocabulary=category_list, mask_token=None
         )
         self.category_list_len = len(category_list)
+
         self.name_tokenizer = tf.keras.layers.StringLookup(
             vocabulary=name_list, mask_token=None
         )
+        self.name_list_len = len(name_list)
+
         self.fnn = tf.keras.Sequential([
             tf.keras.layers.Dense(emb_dim, activation="relu"),
             tf.keras.layers.Dense(emb_dim)
@@ -316,19 +320,27 @@ class ItemCatalogEmbedding(tf.keras.Model):
         self.catalog_idx_config = catalog_idx_config
 
     def call(self, inputs):
-        item_id = inputs[:, self.catalog_idx_config.item_id_index]
-        category = inputs[:, self.catalog_idx_config.category_index]
-        price = inputs[:, self.catalog_idx_config.price_index]
+        # todo remove hardcode, needs modifying CatalogIndexConfig
+        item_id = inputs['item_id']
+        category = inputs['category']
+        price = inputs['price']
+        name = inputs['name']
 
         category_embedding = tf.one_hot(
             self.category_tokenizer(category),
             self.category_list_len
         )
 
+        name_embedding = tf.one_hot(
+            self.name_tokenizer(name),
+            self.name_list_len
+        )
+
         concatenated_inputs = tf.concat([
             self.item_embedding(item_id),
             tf.reshape(self.normalized_price(price), (-1, 1)),
             category_embedding,
+            name_embedding,
         ], axis=1)
 
         outputs = self.fnn(concatenated_inputs)
