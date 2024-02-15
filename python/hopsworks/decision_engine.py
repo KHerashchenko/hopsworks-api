@@ -234,7 +234,7 @@ class RecommendationDecisionEngine(DecisionEngine):
                         "my_vector1": embedding,
                     }
                 })
-        print("Actions to be bulked: ", actions)
+        print("Example item vectors to be bulked: ", actions[:10])
         bulk(os_client, actions)
 
     def build_deployments(self):
@@ -246,8 +246,8 @@ class RecommendationDecisionEngine(DecisionEngine):
         # uploaded_file_path = dataset_api.upload("ranking_predictor.py", "Resources", overwrite=True)
         # predictor_script_path = os.path.join("/Projects", self._client._project_name, uploaded_file_path).replace('\\', '/')
 
-        transformer_script_path = os.path.join("/Projects", self._client._project_name, "ranking_transformer.py").replace('\\', '/')
-        predictor_script_path = os.path.join("/Projects", self._client._project_name, "ranking_predictor.py").replace('\\', '/')
+        transformer_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_transformer.py").replace('\\', '/')
+        predictor_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_predictor.py").replace('\\', '/')
 
         ranking_deployment_name = "rankingdeployment"
         ranking_model = self._mr.get_model("ranking_model", version=1)
