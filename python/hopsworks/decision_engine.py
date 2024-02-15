@@ -276,7 +276,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         redirector_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "logObservations_redirect.py").replace('\\', '/')
 
         SCHEMA_NAME = '_'.join([self._configs_dict['name'],"observations"])
-        TOPIC_NAME = '_'.join([self._configs_dict['name'] + "logObservations5"])
+        TOPIC_NAME = '_'.join([self._configs_dict['name'] + "logObservations"])
 
         avro_schema = {
             "type": "record",
