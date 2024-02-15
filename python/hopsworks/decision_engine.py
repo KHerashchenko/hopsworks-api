@@ -179,6 +179,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         # dev:
         if index_exists:
             os_client.indices.delete(index_name)
+            index_exists = False
 
         if not index_exists:
             logging.info(f"Opensearch index name {index_name} does not exist. Creating.")
