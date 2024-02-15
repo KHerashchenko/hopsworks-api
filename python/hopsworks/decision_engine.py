@@ -217,7 +217,7 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         items_ds = tf.data.Dataset.from_tensor_slices({col: self._catalog_df[col] for col in self._catalog_df})
 
-        item_embeddings = items_ds.batch(2048).map(lambda x: (x[catalog_config['primary_key'][0]], model(x)))
+        item_embeddings = items_ds.batch(2048).map(lambda x: (x[catalog_config['primary_key'][0]], item_model(x)))
 
         actions = []
 
