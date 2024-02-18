@@ -144,16 +144,14 @@ class RecommendationDecisionEngine(DecisionEngine):
         self._catalog_df[price_column_to_float32] = self._catalog_df[price_column_to_float32].astype("float32")
 
         fg.insert(self._catalog_df)
-        fg.add_tag(name="de_use_case", value=self._configs_dict['use_case'])
-        fg.add_tag(name="de_name", value=self._configs_dict['name'])
+        # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         fv = self._fs.get_or_create_feature_view(
             name=self._prefix + catalog_config['feature_group_name'],
             query=fg.select_all(),
             version=1
         )
-        fv.add_tag(name="de_use_case", value=self._configs_dict['use_case'])
-        fv.add_tag(name="de_name", value=self._configs_dict['name'])
+        # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         fv.create_training_data(write_options={"use_spark": True})
 
@@ -196,8 +194,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             model_schema=embedding_model_schema,
         )
         embedding_model.save("embedding_model")
-        embedding_model.set_tag(name="de_name", value=self._configs_dict['name'])
-        embedding_model.set_tag(name="de_use_case", value=self._configs_dict['use_case'])
+        # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         # Creating ranking model placeholder
         file_name = 'ranking_model.pkl'
@@ -207,8 +204,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         ranking_model = self._mr.python.create_model(name=self._prefix + "ranking_model",
                                                description="Ranking model that scores item candidates")
         ranking_model.save(model_path='ranking_model.pkl')
-        ranking_model.set_tag(name="de_use_case", value=self._configs_dict['use_case'])
-        ranking_model.set_tag(name="de_name", value=self._configs_dict['name'])
+        # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         # Creating logObservations model for events redirect to Kafka
         self._redirect_model = self._mr.python.create_model(self._prefix + "logObservations_redirect",
