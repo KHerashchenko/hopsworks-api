@@ -29,8 +29,10 @@ class DecisionEngine(ABC):
     def __init__(self, configs_dict):
         self._name = configs_dict['name']
         self._configs_dict = configs_dict
+        self._prefix = 'de_' + self._name + '_'
         self._catalog_df = None
         self._embedding_model = None
+        self._redirect_model = None
 
         # todo refine api handles calls
         client.init("hopsworks")
@@ -42,6 +44,9 @@ class DecisionEngine(ABC):
 
         self._fs = hsfs_conn().get_feature_store(self._client._project_name + "_featurestore")
         self._mr = hsml_conn().get_model_registry()
+        
+        self._kafka_schema_name = '_'.join([self._client._project_name, self._configs_dict['name'], "observations"])
+        self._kafka_topic_name = '_'.join([self._client._project_name, self._configs_dict['name'], "logObservations"])
 
     @classmethod
     def from_response_json(cls, json_dict, project_id, project_name):
@@ -87,7 +92,27 @@ class DecisionEngine(ABC):
     def build_jobs(self):
         pass
 
+    @property
+    def prefix(self):
+        """Prefix of DE engine entities"""
+        return self._prefix
 
+    @property
+    def configs(self):
+        """Configs dict of DE project"""
+        return self._configs_dict
+
+    @property
+    def name(self):
+        """Name of DE project"""
+        return self._name
+
+    @property
+    def kafka_topic_name(self):
+        """Name of Kafka topic used by DE project for observations"""
+        return self._kafka_topic_name
+    
+    
 class RecommendationDecisionEngine(DecisionEngine):
     def build_catalog(self):
 
@@ -97,14 +122,21 @@ class RecommendationDecisionEngine(DecisionEngine):
         catalog_idx_config = CatalogIndexConfig(**retrieval_config['catalog_index_config'])
 
         fg = self._fs.get_or_create_feature_group(
-            name=catalog_config['feature_group_name'],
+            name=self._prefix + catalog_config['feature_group_name'],
             description='Catalog for the Decision Engine project',
             primary_key=catalog_config['primary_key'],
             online_enabled=True,
             version=1
         )
+        fg.add_tag(name="de_use_case", value=self._configs_dict['use_case'])
+        fg.add_tag(name="de_name", value=self._configs_dict['name'])
 
         self._catalog_df = pd.read_csv(catalog_config['file_path'])
+        # rename user-named columns to internal names using indexes CatalogIndexConfig - used in embed model later
+        self._catalog_df.rename(columns={self._catalog_df.columns[catalog_idx_config.item_id_index]: 'item_id'}, inplace=True)
+        self._catalog_df.rename(columns={self._catalog_df.columns[catalog_idx_config.name_index]: 'name'}, inplace=True)
+        self._catalog_df.rename(columns={self._catalog_df.columns[catalog_idx_config.category_index]: 'category'}, inplace=True)
+        self._catalog_df.rename(columns={self._catalog_df.columns[catalog_idx_config.price_index]: 'price'}, inplace=True)
 
         pk_column_to_str = self._catalog_df.columns[catalog_idx_config.item_id_index]
         self._catalog_df[pk_column_to_str] = self._catalog_df[pk_column_to_str].astype(str)
@@ -116,10 +148,12 @@ class RecommendationDecisionEngine(DecisionEngine):
         fg.insert(self._catalog_df)
 
         fv = self._fs.get_or_create_feature_view(
-            name=catalog_config['feature_group_name'],
+            name=self._prefix + catalog_config['feature_group_name'],
             query=fg.select_all(),
             version=1
         )
+        fv.add_tag(name="de_use_case", value=self._configs_dict['use_case'])
+        fv.add_tag(name="de_name", value=self._configs_dict['name'])
 
         fv.create_training_data(write_options={"use_spark": True})
 
@@ -155,22 +189,32 @@ class RecommendationDecisionEngine(DecisionEngine):
         )
         embedding_example = self._catalog_df.sample().to_dict("records")
 
-        mr_embedding_model = self._mr.tensorflow.create_model(
-            name="embedding_model",
+        embedding_model = self._mr.tensorflow.create_model(
+            name=self._prefix + "embedding_model",
             description="Model that generates embeddings from items catalog features",
             input_example=embedding_example,
             model_schema=embedding_model_schema,
         )
-        mr_embedding_model.save("embedding_model")
+        embedding_model.set_tag(name="de_use_case", value=self._configs_dict['use_case'])
+        embedding_model.set_tag(name="de_name", value=self._configs_dict['name'])
+        embedding_model.save("embedding_model")
 
         # Creating ranking model placeholder
         file_name = 'ranking_model.pkl'
         with open(file_name, 'wb') as file:
             pickle.dump({}, file)
 
-        ranking_model = self._mr.python.create_model(name="ranking_model",
+        ranking_model = self._mr.python.create_model(name=self._prefix + "ranking_model",
                                                description="Ranking model that scores item candidates")
+        ranking_model.set_tag(name="de_use_case", value=self._configs_dict['use_case'])
+        ranking_model.set_tag(name="de_name", value=self._configs_dict['name'])
         ranking_model.save(model_path='ranking_model.pkl')
+
+        # Creating logObservations model for events redirect to Kafka
+        self._redirect_model = self._mr.python.create_model(self._prefix + "logObservations_redirect",
+                                             description="Workaround model for redirecting observations into Kafka")
+        redirector_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "logObservations_redirect_predictor.py").replace('\\', '/')
+        self._redirect_model.save(redirector_script_path, keep_original_files=True)
 
     def build_vector_db(self):
 
@@ -195,7 +239,7 @@ class RecommendationDecisionEngine(DecisionEngine):
                 },
                 "mappings": {
                     "properties": {
-                        "my_vector1": {
+                        self._prefix + "vector": {
                             "type": "knn_vector",
                             "dimension": retrieval_config['item_space_dim'],
                             "method": {
@@ -213,15 +257,6 @@ class RecommendationDecisionEngine(DecisionEngine):
             }
             response = os_client.indices.create(index_name, body=index_body)
 
-        model = self._mr.get_model(
-            name="embedding_model",
-            version=1,
-        )
-        model_path = model.download()
-
-        model_schema = model.model_schema['input_schema']['columnar_schema']
-        item_features = [feat['name'] for feat in model_schema]
-
         items_ds = tf.data.Dataset.from_tensor_slices({col: self._catalog_df[col] for col in self._catalog_df})
 
         item_embeddings = items_ds.batch(2048).map(lambda x: (x[catalog_config['primary_key'][0]], self._embedding_model(x)))
@@ -238,36 +273,24 @@ class RecommendationDecisionEngine(DecisionEngine):
                     "_index": index_name,
                     "_id": item_id,
                     "_source": {
-                        "my_vector1": embedding,
+                        self._prefix + "vector": embedding,
                     }
                 })
-        print("Example item vectors to be bulked: ", actions[:10])
+        logging.info(f"Example item vectors to be bulked: {actions[:10]}")
         bulk(os_client, actions)
 
     def build_deployments(self):
-        # copy transformer file into Hopsworks File System
-        # uploaded_file_path = self._dataset_api.upload("ranking_transformer.py", "Resources", overwrite=True)
-        # transformer_script_path = os.path.join("/Projects", self._client._project_name, uploaded_file_path).replace('\\', '/')
+        # Creating deployment for ranking model
+        mr_ranking_model = self._mr.get_model(name=self._prefix + "ranking_model", version=1)
+
         transformer_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_transformer.py").replace('\\', '/')
-
-        # copy predictor file into Hopsworks File System
-        # uploaded_file_path = dataset_api.upload("ranking_predictor.py", "Resources", overwrite=True)
-        # predictor_script_path = os.path.join("/Projects", self._client._project_name, uploaded_file_path).replace('\\', '/')
-
         predictor_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_predictor.py").replace('\\', '/')
 
-        ranking_deployment_name = "rankingdeployment"
-        ranking_model = self._mr.get_model("ranking_model", version=1)
-
         # define transformer
-        ranking_transformer=Transformer(
-            script_file=transformer_script_path,
-            resources={"num_instances": 1},
-        )
+        ranking_transformer=Transformer(script_file=transformer_script_path, resources={"num_instances": 1})
 
-        # deploy ranking model
-        ranking_deployment = ranking_model.deploy(
-            name=ranking_deployment_name,
+        ranking_deployment = mr_ranking_model.deploy(
+            name=self._prefix + "ranking_deployment",
             description="Deployment that search for item candidates and scores them based on customer metadata",
             script_file=predictor_script_path,
             resources={"num_instances": 1},
@@ -275,48 +298,39 @@ class RecommendationDecisionEngine(DecisionEngine):
         )
 
         # Creating deployment for logObservation endpoint
+        mr_redirect_model = self._mr.get_model(name=self._prefix + "logObservations_redirect", version=1)
+        redirector_script_path = os.path.join(self._redirect_model.version_path, "logObservations_redirect_predictor.py")
+        deployment = self._redirect_model.deploy(self._prefix + 'logObservations_redirect_deployment', script_file=redirector_script_path)
 
-        # copy redirector file into Hopsworks File System
-        # uploaded_file_path = dataset_api.upload("logObservations_redirect.py", "Resources", overwrite=True)
-        # predictor_script_path = os.path.join("/Projects", self._client._project_name, uploaded_file_path).replace('\\', '/')
-
-        redirector_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "logObservations_redirect.py").replace('\\', '/')
-
-        SCHEMA_NAME = '_'.join([self._client._project_name, self._configs_dict['name'], "observations"])
-        TOPIC_NAME = '_'.join([self._client._project_name, self._configs_dict['name'], "logObservations"])
-
+        # creating Kafka topic for logObservation endpoint
         avro_schema = {
             "type": "record",
             "name": "observations",
             "fields": []
         }
 
-        self._kafka_api.create_schema(SCHEMA_NAME, avro_schema)
+        self._kafka_api.create_schema(self._kafka_schema_name, avro_schema)
         # dev:
         try:
-            self._kafka_api._delete_topic(TOPIC_NAME)
+            self._kafka_api._delete_topic(self._kafka_topic_name)
         except Exception:
             pass
-        my_topic = self._kafka_api.create_topic(TOPIC_NAME, SCHEMA_NAME, 1, replicas=1, partitions=1)
+        my_topic = self._kafka_api.create_topic(self._kafka_topic_name, self._kafka_schema_name, 1, replicas=1, partitions=1)
 
-        model = self._mr.python.create_model("logObservations_redirect")
-        model.save(redirector_script_path, keep_original_files=True)
-        predictor_script_path = os.path.join(model.version_path, "logObservations_redirect.py")
-        deployment = model.deploy('observationsdeployment', script_file=predictor_script_path)
 
     def build_jobs(self):
 
         # The job retraining the ranking model. Compares the size of current training dataset and "observations" FG.
         # If diff > 10%, creates new training dataset, retrains ranking model and updates deployment.
-        spark_config = self._jobs_api.get_configuration("PYSPARK")
-        spark_config['appPath'] = "/Resources/retrain_ranking_model_job.py"
-        job = self._jobs_api.create_job("retrain_ranking_model_job", spark_config)
+        spark_config = self._jobs_api.get_configuration("PYTHON")
+        spark_config['appPath'] = "/Resources/ranking_model_retrain_job.py"
+        job = self._jobs_api.create_job(self._prefix + "ranking_model_retrain_job", spark_config)
 
         # The job for consuming observations from Kafka topic. Runs on schedule, inserts stream into observations FG.
         # On the first run, autodetects event schema and creates "observations" FG, "training" FV and empty training dataset.
         spark_config = self._jobs_api.get_configuration("PYSPARK")
-        spark_config['appPath'] = "/Resources/logs_consumer_job.py"
-        job = self._jobs_api.create_job("logs_consumer_job", spark_config)
+        spark_config['appPath'] = "/Resources/logObservations_consume_job.py"
+        job = self._jobs_api.create_job(self._prefix + "logObservations_consume_job", spark_config)
 
 
 @dataclass
@@ -371,7 +385,7 @@ class ItemCatalogEmbedding(tf.keras.Model):
         self.catalog_idx_config = catalog_idx_config
 
     def call(self, inputs):
-        # todo remove hardcode, needs modifying CatalogIndexConfig
+        # because we renamed columns internally
         item_id = inputs['item_id']
         category = inputs['category']
         price = inputs['price']

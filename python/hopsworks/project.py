@@ -26,7 +26,8 @@ from hopsworks.core import (
     kafka_api,
     opensearch_api,
     environment_api,
-    flink_cluster_api, decision_engine_api,
+    flink_cluster_api,
+    decision_engine_api,
 )
 
 
