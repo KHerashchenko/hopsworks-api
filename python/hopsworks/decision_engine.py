@@ -286,7 +286,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         ranking_transformer=Transformer(script_file=transformer_script_path, resources={"num_instances": 1})
 
         ranking_deployment = mr_ranking_model.deploy(
-            name=(self._prefix + "ranking_deployment").replace("_", ""),
+            name=(self._prefix + "ranking_deployment").replace("_", "").lower(),
             description="Deployment that search for item candidates and scores them based on customer metadata",
             script_file=predictor_script_path,
             resources={"num_instances": 1},
@@ -296,7 +296,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         # Creating deployment for logObservation endpoint
         mr_redirect_model = self._mr.get_model(name=self._prefix + "logObservations_redirect", version=1)
         redirector_script_path = os.path.join(self._redirect_model.version_path, "logObservations_redirect_predictor.py")
-        deployment = self._redirect_model.deploy((self._prefix + 'logObservations_redirect_deployment').replace("_", ""),
+        deployment = self._redirect_model.deploy((self._prefix + 'logObservations_redirect_deployment').replace("_", "").lower(),
                                                  script_file=redirector_script_path)
 
         # creating Kafka topic for logObservation endpoint
