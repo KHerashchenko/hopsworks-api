@@ -128,8 +128,6 @@ class RecommendationDecisionEngine(DecisionEngine):
             online_enabled=True,
             version=1
         )
-        fg.add_tag(name="de_use_case", value=self._configs_dict['use_case'])
-        fg.add_tag(name="de_name", value=self._configs_dict['name'])
 
         self._catalog_df = pd.read_csv(catalog_config['file_path'])
         # rename user-named columns to internal names using indexes CatalogIndexConfig - used in embed model later
@@ -146,6 +144,8 @@ class RecommendationDecisionEngine(DecisionEngine):
         self._catalog_df[price_column_to_float32] = self._catalog_df[price_column_to_float32].astype("float32")
 
         fg.insert(self._catalog_df)
+        fg.add_tag(name="de_use_case", value=self._configs_dict['use_case'])
+        fg.add_tag(name="de_name", value=self._configs_dict['name'])
 
         fv = self._fs.get_or_create_feature_view(
             name=self._prefix + catalog_config['feature_group_name'],
@@ -195,9 +195,9 @@ class RecommendationDecisionEngine(DecisionEngine):
             input_example=embedding_example,
             model_schema=embedding_model_schema,
         )
-        embedding_model.set_tag(name="de_use_case", value=self._configs_dict['use_case'])
-        embedding_model.set_tag(name="de_name", value=self._configs_dict['name'])
         embedding_model.save("embedding_model")
+        embedding_model.set_tag(name="de_name", value=self._configs_dict['name'])
+        embedding_model.set_tag(name="de_use_case", value=self._configs_dict['use_case'])
 
         # Creating ranking model placeholder
         file_name = 'ranking_model.pkl'
@@ -206,9 +206,9 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         ranking_model = self._mr.python.create_model(name=self._prefix + "ranking_model",
                                                description="Ranking model that scores item candidates")
+        ranking_model.save(model_path='ranking_model.pkl')
         ranking_model.set_tag(name="de_use_case", value=self._configs_dict['use_case'])
         ranking_model.set_tag(name="de_name", value=self._configs_dict['name'])
-        ranking_model.save(model_path='ranking_model.pkl')
 
         # Creating logObservations model for events redirect to Kafka
         self._redirect_model = self._mr.python.create_model(self._prefix + "logObservations_redirect",
