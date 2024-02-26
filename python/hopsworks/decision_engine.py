@@ -134,7 +134,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         fg.save(features=item_features)
 
         self._catalog_df = pd.read_csv(catalog_config['file_path'],
-                                       parse_dates=[feat for feat, val in catalog_config['schema'].items() if val['type'] == 'date'])
+                                       parse_dates=[feat for feat, val in catalog_config['schema'].items() if val['type'] == 'timestamp'])
         fg.insert(self._catalog_df[catalog_config['schema'].keys()])
         # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
@@ -146,8 +146,6 @@ class RecommendationDecisionEngine(DecisionEngine):
         fv = self._fs.get_or_create_feature_view(
             name=self._prefix + catalog_config['feature_view_name'],
             query=fg.select_all(),
-            # query=fg.select(catalog_config['schema'].keys()),
-            # transformation_functions={feat: val['type'] for feat, val in catalog_config['schema'].items()},
             version=1
         )
         # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
