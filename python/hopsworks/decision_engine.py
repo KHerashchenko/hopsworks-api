@@ -1,11 +1,13 @@
 import logging
 import pickle
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import List
 from dataclasses import dataclass
 
 import os
 import humps
+import numpy
 import pandas as pd
 
 from hopsworks import client
@@ -134,17 +136,51 @@ class RecommendationDecisionEngine(DecisionEngine):
         fg.save(features=item_features)
 
         self._catalog_df = pd.read_csv(catalog_config['file_path'])
-        fg.insert(self._catalog_df)
+        fg.insert(self._catalog_df[catalog_config['schema'].keys()])
         # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
+
+        # transformation_functions = self._create_transformation_functions()
 
         fv = self._fs.get_or_create_feature_view(
             name=self._prefix + catalog_config['feature_group_name'],
             query=fg.select_all(),
+            # query=fg.select(catalog_config['schema'].keys()),
+            # transformation_functions={feat: val['type'] for feat, val in catalog_config['schema'].items()},
             version=1
         )
         # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         fv.create_training_data(write_options={"use_spark": True})
+
+    def _create_transformation_functions(self):
+        # creating transformation functions
+        def to_float32(x): return x
+        def to_date(x): return x
+        def to_string(x): return x
+        def to_int(x): return x
+
+        transformation_functions = {}
+        transformation_functions['float32'] = self._fs.create_transformation_function(
+            transformation_function=to_float32, output_type=numpy.float32, version=1
+        )
+        transformation_functions['float32'].save()
+
+        transformation_functions['int'] = self._fs.create_transformation_function(
+            transformation_function=to_int(), output_type=int, version=1
+        )
+        transformation_functions['int'].save()
+
+        transformation_functions['string'] = self._fs.create_transformation_function(
+            transformation_function=to_string, output_type=str, version=1
+        )
+        transformation_functions['string'].save()
+
+        transformation_functions['date'] = self._fs.create_transformation_function(
+            transformation_function=to_date, output_type=datetime.date, version=1
+        )
+        transformation_functions['date'].save()
+
+        return transformation_functions
 
     def run_data_validation(self):
         pass
@@ -185,7 +221,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             model_schema=embedding_model_schema,
         )
         embedding_model.save("embedding_model")
-        # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
+        # embedding_model.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         # Creating ranking model placeholder
         file_name = 'ranking_model.pkl'
@@ -195,7 +231,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         ranking_model = self._mr.python.create_model(name=self._prefix + "ranking_model",
                                                description="Ranking model that scores item candidates")
         ranking_model.save(model_path='ranking_model.pkl')
-        # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
+        # ranking_model.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         # Creating logObservations model for events redirect to Kafka
         self._redirect_model = self._mr.python.create_model(self._prefix + "logObservations_redirect",
