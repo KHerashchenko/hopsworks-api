@@ -125,7 +125,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         catalog_idx_config = CatalogIndexConfig(**retrieval_config['catalog_index_config'])
 
         fg = self._fs.get_or_create_feature_group(
-            name=self._prefix + catalog_config['feature_group_name'],
+            name=self._prefix + catalog_config['feature_view_name'],
             description='Catalog for the Decision Engine project',
             primary_key=catalog_config['primary_key'],
             online_enabled=True,
@@ -140,10 +140,13 @@ class RecommendationDecisionEngine(DecisionEngine):
                   parse_dates=[feat for feat, val in catalog_config['schema'].items() if val['type'] == 'datetime'])
         # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
-        # transformation_functions = self._create_transformation_functions()
+        # todo tensorflow errors if col is of type float64, expecting float32
+        for feat, val in catalog_config['schema'].items():
+            if val['type'] == 'float':
+                self._catalog_df[feat] = self._catalog_df[feat].astype("float32")
 
         fv = self._fs.get_or_create_feature_view(
-            name=self._prefix + catalog_config['feature_group_name'],
+            name=self._prefix + catalog_config['feature_view_name'],
             query=fg.select_all(),
             # query=fg.select(catalog_config['schema'].keys()),
             # transformation_functions={feat: val['type'] for feat, val in catalog_config['schema'].items()},
@@ -247,7 +250,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         catalog_config = self._configs_dict['catalog']
         retrieval_config = self._configs_dict['model_configuration']['retrieval_model']
 
-        index_name = self._opensearch_api.get_project_index(catalog_config['feature_group_name'])
+        index_name = self._opensearch_api.get_project_index(catalog_config['feature_view_name'])
         index_exists = os_client.indices.exists(index_name)
         # dev:
         if index_exists:
