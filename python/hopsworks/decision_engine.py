@@ -134,8 +134,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         fg.save(features=item_features)
 
         self._catalog_df = pd.read_csv(catalog_config['file_path'],
-                                       parse_dates=[feat for feat, val in catalog_config['schema'].items() if val['type'] == 'datetime'],
-                                       keep_default_na=False)
+                                       parse_dates=[feat for feat, val in catalog_config['schema'].items() if val['type'] == 'date'])
         fg.insert(self._catalog_df[catalog_config['schema'].keys()])
         # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
