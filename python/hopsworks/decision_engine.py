@@ -120,9 +120,7 @@ class RecommendationDecisionEngine(DecisionEngine):
     def build_catalog(self):
 
         # Creating catalog FG
-        catalog_config = self._configs_dict['catalog']
-        retrieval_config = self._configs_dict['model_configuration']['retrieval_model']
-        catalog_idx_config = CatalogIndexConfig(**retrieval_config['catalog_index_config'])
+        catalog_config = self._configs_dict['product_list']
 
         fg = self._fs.get_or_create_feature_group(
             name=self._prefix + catalog_config['feature_view_name'],
@@ -155,36 +153,6 @@ class RecommendationDecisionEngine(DecisionEngine):
         # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         fv.create_training_data(write_options={"use_spark": True})
-
-    def _create_transformation_functions(self):
-        # creating transformation functions
-        def to_float32(x): return x
-        def to_date(x): return x
-        def to_string(x): return x
-        def to_int(x): return x
-
-        transformation_functions = {}
-        transformation_functions['float32'] = self._fs.create_transformation_function(
-            transformation_function=to_float32, output_type=numpy.float32, version=1
-        )
-        transformation_functions['float32'].save()
-
-        transformation_functions['int'] = self._fs.create_transformation_function(
-            transformation_function=to_int(), output_type=int, version=1
-        )
-        transformation_functions['int'].save()
-
-        transformation_functions['string'] = self._fs.create_transformation_function(
-            transformation_function=to_string, output_type=str, version=1
-        )
-        transformation_functions['string'].save()
-
-        transformation_functions['date'] = self._fs.create_transformation_function(
-            transformation_function=to_date, output_type=datetime.date, version=1
-        )
-        transformation_functions['date'].save()
-
-        return transformation_functions
 
     def run_data_validation(self):
         pass
