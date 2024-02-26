@@ -133,9 +133,9 @@ class RecommendationDecisionEngine(DecisionEngine):
         item_features = [Feature(name=feat, type=val['type']) for feat, val in catalog_config['schema'].items()]
         fg.save(features=item_features)
 
-        self._catalog_df = pd.read_csv(catalog_config['file_path'])
-        fg.insert(self._catalog_df[catalog_config['schema'].keys()],
-                  parse_dates=[feat for feat, val in catalog_config['schema'].items() if val['type'] == 'datetime'])
+        self._catalog_df = pd.read_csv(catalog_config['file_path'],
+                                       parse_dates=[feat for feat, val in catalog_config['schema'].items() if val['type'] == 'datetime'])
+        fg.insert(self._catalog_df[catalog_config['schema'].keys()])
         # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         # todo tensorflow errors if col is of type float64, expecting float32
