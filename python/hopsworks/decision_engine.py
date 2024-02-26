@@ -10,6 +10,7 @@ import pandas as pd
 
 from hopsworks import client
 from hopsworks.core import opensearch_api, dataset_api, kafka_api, job_api
+from hsfs.feature import Feature
 from opensearchpy import OpenSearch
 from opensearchpy.helpers import bulk
 
@@ -129,20 +130,10 @@ class RecommendationDecisionEngine(DecisionEngine):
             version=1
         )
 
+        item_features = [Feature(name=feat, type=val['type']) for feat, val in catalog_config['schema'].items()]
+        fg.save(features=item_features)
+
         self._catalog_df = pd.read_csv(catalog_config['file_path'])
-        # rename user-named columns to internal names using indexes CatalogIndexConfig - used in embed model later
-        self._catalog_df.rename(columns={self._catalog_df.columns[catalog_idx_config.item_id_index]: 'item_id'}, inplace=True)
-        self._catalog_df.rename(columns={self._catalog_df.columns[catalog_idx_config.name_index]: 'name'}, inplace=True)
-        self._catalog_df.rename(columns={self._catalog_df.columns[catalog_idx_config.category_index]: 'category'}, inplace=True)
-        self._catalog_df.rename(columns={self._catalog_df.columns[catalog_idx_config.price_index]: 'price'}, inplace=True)
-
-        pk_column_to_str = self._catalog_df.columns[catalog_idx_config.item_id_index]
-        self._catalog_df[pk_column_to_str] = self._catalog_df[pk_column_to_str].astype(str)
-
-        # todo tensorflow errors if col is of type float64, expecting float32
-        price_column_to_float32 = self._catalog_df.columns[catalog_idx_config.price_index]
-        self._catalog_df[price_column_to_float32] = self._catalog_df[price_column_to_float32].astype("float32")
-
         fg.insert(self._catalog_df)
         # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
