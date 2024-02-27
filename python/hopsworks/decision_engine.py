@@ -2,7 +2,7 @@ import logging
 import pickle
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List
+from typing import List, Dict
 from dataclasses import dataclass
 
 import os
@@ -18,6 +18,7 @@ from opensearchpy.helpers import bulk
 
 import tensorflow as tf
 from tensorflow.keras.layers.experimental.preprocessing import StringLookup
+from tensorflow.keras.layers import TextVectorization
 # tf.keras.backend.set_floatx('float64') # didnt solve the error
 
 from hsml.schema import Schema
@@ -47,7 +48,7 @@ class DecisionEngine(ABC):
 
         self._fs = hsfs_conn().get_feature_store(self._client._project_name + "_featurestore")
         self._mr = hsml_conn().get_model_registry()
-        
+
         self._kafka_schema_name = '_'.join([self._client._project_name, self._configs_dict['name'], "observations"])
         self._kafka_topic_name = '_'.join([self._client._project_name, self._configs_dict['name'], "logObservations"])
 
@@ -73,10 +74,6 @@ class DecisionEngine(ABC):
 
     @abstractmethod
     def build_catalog(self):
-        pass
-
-    @abstractmethod
-    def run_data_validation(self):
         pass
 
     @abstractmethod
@@ -114,8 +111,8 @@ class DecisionEngine(ABC):
     def kafka_topic_name(self):
         """Name of Kafka topic used by DE project for observations"""
         return self._kafka_topic_name
-    
-    
+
+
 class RecommendationDecisionEngine(DecisionEngine):
     def build_catalog(self):
 
@@ -134,7 +131,8 @@ class RecommendationDecisionEngine(DecisionEngine):
         fg.save(features=item_features)
 
         self._catalog_df = pd.read_csv(catalog_config['file_path'],
-                                       parse_dates=[feat for feat, val in catalog_config['schema'].items() if val['type'] == 'timestamp'])
+                                       parse_dates=[feat for feat, val in catalog_config['schema'].items() if
+                                                    val['type'] == 'timestamp'])
         fg.insert(self._catalog_df[catalog_config['schema'].keys()])
         # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
@@ -152,22 +150,29 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         fv.create_training_data(write_options={"use_spark": True})
 
-    def run_data_validation(self):
-        pass
-
     def build_models(self):
 
         # Creating retrieval model
+        catalog_config = self._configs_dict['product_list']
         retrieval_config = self._configs_dict['model_configuration']['retrieval_model']
 
-        catalog_idx_config = CatalogIndexConfig(**retrieval_config['catalog_index_config'])
-        emb_dim = retrieval_config['item_space_dim']
+        pk_index_list = self._catalog_df[self._configs_dict['product_list']['primary_key']].astype(
+            str).unique().tolist()
+        categories_lists = {}
+        text_features = {}
+        for feat, val in catalog_config['schema'].items():
+            if val['transformation'] == 'category':
+                categories_lists[feat] = self._catalog_df[feat].astype(str).unique().tolist()
+            elif val['transformation'] == 'text':
+                text_features[feat] = self._catalog_df[feat].tolist()
 
-        item_id_list = self._catalog_df.iloc[:, catalog_idx_config.item_id_index].astype(str).unique().tolist()
-        name_list = self._catalog_df.iloc[:, catalog_idx_config.name_index].astype(str).unique().tolist()
-        category_list = self._catalog_df.iloc[:, catalog_idx_config.category_index].astype(str).unique().tolist()
+        self._embedding_model = ItemCatalogEmbedding(catalog_config, pk_index_list, categories_lists)
 
-        self._embedding_model = ItemCatalogEmbedding(item_id_list, name_list, category_list, catalog_idx_config, emb_dim)
+        for feat, val in catalog_config['schema'].items():
+            if val['transformation'] == 'numeric':
+                self._embedding_model.normalized_feats[feat].adapt(self._catalog_df[feat].tolist())
+            elif val['transformation'] == 'text':
+                self._embedding_model.texts_embeddings[feat].layers[0].adapt(self._catalog_df[feat].tolist())
 
         tf.saved_model.save(self._embedding_model, "embedding_model")
 
@@ -199,14 +204,15 @@ class RecommendationDecisionEngine(DecisionEngine):
             pickle.dump({}, file)
 
         ranking_model = self._mr.python.create_model(name=self._prefix + "ranking_model",
-                                               description="Ranking model that scores item candidates")
+                                                     description="Ranking model that scores item candidates")
         ranking_model.save(model_path='ranking_model.pkl')
         # ranking_model.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         # Creating logObservations model for events redirect to Kafka
         self._redirect_model = self._mr.python.create_model(self._prefix + "logObservations_redirect",
-                                             description="Workaround model for redirecting observations into Kafka")
-        redirector_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "logObservations_redirect_predictor.py").replace('\\', '/')
+                                                            description="Workaround model for redirecting observations into Kafka")
+        redirector_script_path = os.path.join("/Projects", self._client._project_name, "Resources",
+                                              "logObservations_redirect_predictor.py").replace('\\', '/')
         self._redirect_model.save(redirector_script_path, keep_original_files=True)
 
     def build_vector_db(self):
@@ -252,7 +258,8 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         items_ds = tf.data.Dataset.from_tensor_slices({col: self._catalog_df[col] for col in self._catalog_df})
 
-        item_embeddings = items_ds.batch(2048).map(lambda x: (x[catalog_config['primary_key'][0]], self._embedding_model(x)))
+        item_embeddings = items_ds.batch(2048).map(
+            lambda x: (x[catalog_config['primary_key'][0]], self._embedding_model(x)))
 
         actions = []
 
@@ -276,11 +283,13 @@ class RecommendationDecisionEngine(DecisionEngine):
         # Creating deployment for ranking model
         mr_ranking_model = self._mr.get_model(name=self._prefix + "ranking_model", version=1)
 
-        transformer_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_transformer.py").replace('\\', '/')
-        predictor_script_path = os.path.join("/Projects", self._client._project_name, "Resources", "ranking_model_predictor.py").replace('\\', '/')
+        transformer_script_path = os.path.join("/Projects", self._client._project_name, "Resources",
+                                               "ranking_model_transformer.py").replace('\\', '/')
+        predictor_script_path = os.path.join("/Projects", self._client._project_name, "Resources",
+                                             "ranking_model_predictor.py").replace('\\', '/')
 
         # define transformer
-        ranking_transformer=Transformer(script_file=transformer_script_path, resources={"num_instances": 1})
+        ranking_transformer = Transformer(script_file=transformer_script_path, resources={"num_instances": 1})
 
         ranking_deployment = mr_ranking_model.deploy(
             name=(self._prefix + "ranking_deployment").replace("_", "").lower(),
@@ -292,9 +301,11 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         # Creating deployment for logObservation endpoint
         mr_redirect_model = self._mr.get_model(name=self._prefix + "logObservations_redirect", version=1)
-        redirector_script_path = os.path.join(self._redirect_model.version_path, "logObservations_redirect_predictor.py")
-        deployment = self._redirect_model.deploy((self._prefix + 'logObservations_redirect_deployment').replace("_", "").lower(),
-                                                 script_file=redirector_script_path)
+        redirector_script_path = os.path.join(self._redirect_model.version_path,
+                                              "logObservations_redirect_predictor.py")
+        deployment = self._redirect_model.deploy(
+            (self._prefix + 'logObservations_redirect_deployment').replace("_", "").lower(),
+            script_file=redirector_script_path)
 
         # creating Kafka topic for logObservation endpoint
         avro_schema = {
@@ -309,8 +320,8 @@ class RecommendationDecisionEngine(DecisionEngine):
             self._kafka_api._delete_topic(self._kafka_topic_name)
         except Exception:
             pass
-        my_topic = self._kafka_api.create_topic(self._kafka_topic_name, self._kafka_schema_name, 1, replicas=1, partitions=1)
-
+        my_topic = self._kafka_api.create_topic(self._kafka_topic_name, self._kafka_schema_name, 1, replicas=1,
+                                                partitions=1)
 
     def build_jobs(self):
 
@@ -327,81 +338,72 @@ class RecommendationDecisionEngine(DecisionEngine):
         job = self._jobs_api.create_job(self._prefix + "logObservations_consume_job", spark_config)
 
 
-@dataclass
-class CatalogIndexConfig:
-    item_id_index: int = 0
-    name_index: int = 1
-    price_index: int = 2
-    category_index: int = 3
-
-
 class ItemCatalogEmbedding(tf.keras.Model):
 
-    def __init__(self, item_id_list: List[str], category_list: List[str], name_list: List[str],
-                 catalog_idx_config: CatalogIndexConfig, emb_dim: int):
+    def __init__(self, catalog_config: dict, pk_index_list: List[str], categories_lists: Dict[str, List[str]]):
         super().__init__()
 
-        if emb_dim <= 0:
-            raise ValueError("emb_dim must be a positive integer")
+        self._catalog_config = catalog_config
+        item_space_dim = self.config['model_configuration']['retrieval_model']['item_space_dim']
 
-        if catalog_idx_config is None:
-            catalog_idx_config = CatalogIndexConfig()
-
-        self.item_embedding = tf.keras.Sequential([
+        self.pk_embedding = tf.keras.Sequential([
             StringLookup(
-                vocabulary=item_id_list,
+                vocabulary=pk_index_list,
                 mask_token=None
             ),
             tf.keras.layers.Embedding(
                 # We add an additional embedding to account for unknown tokens.
-                len(item_id_list) + 1,
-                emb_dim
+                len(pk_index_list) + 1,
+                item_space_dim
             )
         ])
 
-        self.normalized_price = tf.keras.layers.Normalization(axis=None)
+        self.categories_tokenizers = {}
+        self.categories_lens = {}
+        for feat, lst in categories_lists.values():
+            self.categories_tokenizers[feat] = tf.keras.layers.StringLookup(vocabulary=lst, mask_token=None)
+            self.categories_lens[feat] = len(lst)
 
-        self.category_tokenizer = tf.keras.layers.StringLookup(
-            vocabulary=category_list, mask_token=None
-        )
-        self.category_list_len = len(category_list)
+        vocab_size = 1000
+        self.texts_embeddings = []
+        self.normalized_feats = []
+        for feat, val in self._catalog_config['schema'].items():
+            if val['transformation'] == 'text':
+                self.texts_embeddings[feat] = tf.keras.Sequential([
+                    TextVectorization(
+                        max_tokens=vocab_size,
+                        output_mode="int",
+                        output_sequence_length=100,
+                    ),
+                    tf.keras.layers.Embedding(
+                        vocab_size,
+                        item_space_dim,
+                    )
+                ])
+            elif val['transformation'] == 'numeric':
+                self.normalized_feats[feat] = tf.keras.layers.Normalization(axis=None)
 
-        self.name_tokenizer = tf.keras.layers.StringLookup(
-            vocabulary=name_list, mask_token=None
-        )
-        self.name_list_len = len(name_list)
 
         self.fnn = tf.keras.Sequential([
-            tf.keras.layers.Dense(emb_dim, activation="relu"),
-            tf.keras.layers.Dense(emb_dim)
+            tf.keras.layers.Dense(item_space_dim, activation="relu"),
+            tf.keras.layers.Dense(item_space_dim)
         ])
 
-        self.catalog_idx_config = catalog_idx_config
-
     def call(self, inputs):
-        # because we renamed columns internally
-        item_id = inputs['item_id']
-        category = inputs['category']
-        price = inputs['price']
-        name = inputs['name']
 
-        category_embedding = tf.one_hot(
-            self.category_tokenizer(category),
-            self.category_list_len
-        )
+        layers = [
+            self.item_embedding(inputs[self._catalog_config['primary_key']])
+        ]
 
-        name_embedding = tf.one_hot(
-            self.name_tokenizer(name),
-            self.name_list_len
-        )
+        for feat, val in self._catalog_config['schema'].items():
+            if val['transformation'] == 'category':
+                layers.append(tf.one_hot(self.categories_tokenizers[feat](inputs[feat]), self.categories_lens[feat]))
+            elif val['transformation'] == 'text':
+                layers.append(self.texts_embeddings[feat](inputs[feat]))
+            elif val['transformation'] == 'numeric':
+                layers.append(tf.reshape(self.normalized_feats[feat](inputs[feat]), (-1, 1)))
 
-        concatenated_inputs = tf.concat([
-            self.item_embedding(item_id),
-            tf.reshape(self.normalized_price(price), (-1, 1)),
-            category_embedding,
-            name_embedding,
-        ], axis=1)
-
+        concatenated_inputs = tf.concat(layers, axis=1)
         outputs = self.fnn(concatenated_inputs)
 
         return outputs
