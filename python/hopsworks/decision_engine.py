@@ -122,7 +122,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         fg = self._fs.get_or_create_feature_group(
             name=self._prefix + catalog_config['feature_view_name'],
             description='Catalog for the Decision Engine project',
-            primary_key=catalog_config['primary_key'],
+            primary_key=[catalog_config['primary_key']],
             online_enabled=True,
             version=1
         )
@@ -156,8 +156,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         catalog_config = self._configs_dict['product_list']
         retrieval_config = self._configs_dict['model_configuration']['retrieval_model']
 
-        pk_index_list = self._catalog_df[self._configs_dict['product_list']['primary_key']].astype(
-            str).unique().tolist()
+        pk_index_list = self._catalog_df[self._configs_dict['product_list']['primary_key']].astype(str).unique().tolist()
         categories_lists = {}
         text_features = {}
         for feat, val in catalog_config['schema'].items():
@@ -259,7 +258,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         items_ds = tf.data.Dataset.from_tensor_slices({col: self._catalog_df[col] for col in self._catalog_df})
 
         item_embeddings = items_ds.batch(2048).map(
-            lambda x: (x[catalog_config['primary_key'][0]], self._embedding_model(x)))
+            lambda x: (x[catalog_config['primary_key']], self._embedding_model(x)))
 
         actions = []
 
