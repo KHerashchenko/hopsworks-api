@@ -368,8 +368,8 @@ class ItemCatalogEmbedding(tf.keras.Model):
             self.categories_lens[feat] = len(lst)
 
         vocab_size = 1000
-        self.texts_embeddings = []
-        self.normalized_feats = []
+        self.texts_embeddings = {}
+        self.normalized_feats = {}
         for feat, val in self._configs_dict['product_list']['schema'].items():
             if 'transformation' not in val.keys():
                 continue
