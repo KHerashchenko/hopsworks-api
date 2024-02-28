@@ -222,7 +222,7 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         # Creating Opensearch index
         os_client = OpenSearch(**self._opensearch_api.get_default_py_config())
-        catalog_config = self._configs_dict['catalog']
+        catalog_config = self._configs_dict['product_list']
         retrieval_config = self._configs_dict['model_configuration']['retrieval_model']
 
         index_name = self._opensearch_api.get_project_index(catalog_config['feature_view_name'])
@@ -363,7 +363,7 @@ class ItemCatalogEmbedding(tf.keras.Model):
 
         self.categories_tokenizers = {}
         self.categories_lens = {}
-        for feat, lst in categories_lists.values():
+        for feat, lst in categories_lists.items():
             self.categories_tokenizers[feat] = tf.keras.layers.StringLookup(vocabulary=lst, mask_token=None)
             self.categories_lens[feat] = len(lst)
 
