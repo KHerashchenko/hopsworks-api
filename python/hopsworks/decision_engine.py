@@ -160,6 +160,8 @@ class RecommendationDecisionEngine(DecisionEngine):
         categories_lists = {}
         text_features = {}
         for feat, val in catalog_config['schema'].items():
+            if 'transformation' not in val.keys():
+                continue
             if val['transformation'] == 'category':
                 categories_lists[feat] = self._catalog_df[feat].astype(str).unique().tolist()
             elif val['transformation'] == 'text':
@@ -168,6 +170,8 @@ class RecommendationDecisionEngine(DecisionEngine):
         self._embedding_model = ItemCatalogEmbedding(catalog_config, pk_index_list, categories_lists)
 
         for feat, val in catalog_config['schema'].items():
+            if 'transformation' not in val.keys():
+                continue
             if val['transformation'] == 'numeric':
                 self._embedding_model.normalized_feats[feat].adapt(self._catalog_df[feat].tolist())
             elif val['transformation'] == 'text':
@@ -179,7 +183,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         embedding_model_output_schema = Schema([{
             "name": "embedding",
             "type": "double",
-            "shape": [emb_dim],
+            "shape": [retrieval_config['item_space_dim']],
         }])
 
         embedding_model_schema = ModelSchema(
@@ -367,6 +371,8 @@ class ItemCatalogEmbedding(tf.keras.Model):
         self.texts_embeddings = []
         self.normalized_feats = []
         for feat, val in self._catalog_config['schema'].items():
+            if 'transformation' not in val.keys():
+                continue
             if val['transformation'] == 'text':
                 self.texts_embeddings[feat] = tf.keras.Sequential([
                     TextVectorization(
@@ -395,6 +401,8 @@ class ItemCatalogEmbedding(tf.keras.Model):
         ]
 
         for feat, val in self._catalog_config['schema'].items():
+            if 'transformation' not in val.keys():
+                continue
             if val['transformation'] == 'category':
                 layers.append(tf.one_hot(self.categories_tokenizers[feat](inputs[feat]), self.categories_lens[feat]))
             elif val['transformation'] == 'text':
