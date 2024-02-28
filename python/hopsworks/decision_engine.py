@@ -167,7 +167,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             elif val['transformation'] == 'text':
                 text_features[feat] = self._catalog_df[feat].tolist()
 
-        self._embedding_model = ItemCatalogEmbedding(catalog_config, pk_index_list, categories_lists)
+        self._embedding_model = ItemCatalogEmbedding(self._configs_dict, pk_index_list, categories_lists)
 
         for feat, val in catalog_config['schema'].items():
             if 'transformation' not in val.keys():
@@ -343,11 +343,11 @@ class RecommendationDecisionEngine(DecisionEngine):
 
 class ItemCatalogEmbedding(tf.keras.Model):
 
-    def __init__(self, catalog_config: dict, pk_index_list: List[str], categories_lists: Dict[str, List[str]]):
+    def __init__(self, configs_dict: dict, pk_index_list: List[str], categories_lists: Dict[str, List[str]]):
         super().__init__()
 
-        self._catalog_config = catalog_config
-        item_space_dim = self._catalog_config['model_configuration']['retrieval_model']['item_space_dim']
+        self._configs_dict = configs_dict
+        item_space_dim = self._configs_dict['model_configuration']['retrieval_model']['item_space_dim']
 
         self.pk_embedding = tf.keras.Sequential([
             StringLookup(
@@ -370,7 +370,7 @@ class ItemCatalogEmbedding(tf.keras.Model):
         vocab_size = 1000
         self.texts_embeddings = []
         self.normalized_feats = []
-        for feat, val in self._catalog_config['schema'].items():
+        for feat, val in self._configs_dict['product_list']['schema'].items():
             if 'transformation' not in val.keys():
                 continue
             if val['transformation'] == 'text':
@@ -397,10 +397,10 @@ class ItemCatalogEmbedding(tf.keras.Model):
     def call(self, inputs):
 
         layers = [
-            self.item_embedding(inputs[self._catalog_config['primary_key']])
+            self.pk_embedding(inputs[self._configs_dict['primary_key']])
         ]
 
-        for feat, val in self._catalog_config['schema'].items():
+        for feat, val in self._configs_dict['product_list']['schema'].items():
             if 'transformation' not in val.keys():
                 continue
             if val['transformation'] == 'category':
