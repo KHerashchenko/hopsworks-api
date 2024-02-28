@@ -347,7 +347,7 @@ class ItemCatalogEmbedding(tf.keras.Model):
         super().__init__()
 
         self._catalog_config = catalog_config
-        item_space_dim = self.config['model_configuration']['retrieval_model']['item_space_dim']
+        item_space_dim = self._catalog_config['model_configuration']['retrieval_model']['item_space_dim']
 
         self.pk_embedding = tf.keras.Sequential([
             StringLookup(
