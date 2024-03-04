@@ -319,7 +319,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             "decision-engine",
             self._name,
             "logObservations_redirect_predictor.py",
-        ).replace("\\", "/")
+        )
         self._redirect_model.save(redirector_script_path, keep_original_files=True)
         # ranking_model.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
@@ -404,13 +404,13 @@ class RecommendationDecisionEngine(DecisionEngine):
             self._client._project_name,
             "Resources",
             "ranking_model_transformer.py",
-        ).replace("\\", "/")
+        )
         predictor_script_path = os.path.join(
             "/Projects",
             self._client._project_name,
             "Resources",
             "ranking_model_predictor.py",
-        ).replace("\\", "/")
+        )
 
         # define transformer
         ranking_transformer = Transformer(
@@ -452,7 +452,12 @@ class RecommendationDecisionEngine(DecisionEngine):
     def build_jobs(self):
         # The job retraining the models. 
         py_config = self._jobs_api.get_configuration("PYTHON")
-        py_config["appPath"] = "/Resources/retrain_job.py"
+        py_config["appPath"] = os.path.join(
+            "/Projects",
+            self._client._project_name,
+            "Resources",
+            "retrain_job.py",
+        )
         py_config["defaultArgs"] = f"-project_name {self._name}"
         job = self._jobs_api.create_job(
             self._prefix + "retrain_job", py_config
@@ -461,9 +466,14 @@ class RecommendationDecisionEngine(DecisionEngine):
         # The job for consuming observations from Kafka topic. Runs on schedule, inserts stream into observations FG.
         # On the first run, autodetects event schema and creates "observations" FG, "training" FV and empty training dataset.
         spark_config = self._jobs_api.get_configuration("PYSPARK")
-        spark_config["appPath"] = "/Resources/logObservations_consume_job.py" # TODO rework job for new events type
+        spark_config["appPath"] = os.path.join(
+            "/Projects",
+            self._client._project_name,
+            "Resources",
+            "events_consume_job.py",
+        ) # TODO rework job for new events type
         job = self._jobs_api.create_job(
-            self._prefix + "logObservations_consume_job", spark_config
+            self._prefix + "events_consume_job", spark_config
         )
 
 
