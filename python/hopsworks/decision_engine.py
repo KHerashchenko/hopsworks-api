@@ -2,8 +2,9 @@ import logging
 import pickle
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Text
 from dataclasses import dataclass
+import langcodes
 
 import os
 import humps
@@ -19,6 +20,8 @@ from opensearchpy.helpers import bulk
 import tensorflow as tf
 from tensorflow.keras.layers.experimental.preprocessing import StringLookup
 from tensorflow.keras.layers import TextVectorization
+import tensorflow_recommenders as tfrs
+
 # tf.keras.backend.set_floatx('float64') # didnt solve the error
 
 from hsml.schema import Schema
@@ -31,26 +34,38 @@ from hsml import connection as hsml_conn
 
 class DecisionEngine(ABC):
     def __init__(self, configs_dict):
-        self._name = configs_dict['name']
+        self._name = configs_dict["name"]
         self._configs_dict = configs_dict
-        self._prefix = 'de_' + self._name + '_'
+        self._prefix = "de_" + self._name + "_"
         self._catalog_df = None
-        self._embedding_model = None
+        self._retrieval_model = None
         self._redirect_model = None
 
         # todo refine api handles calls
         client.init("hopsworks")
         self._client = client.get_instance()
-        self._opensearch_api = opensearch_api.OpenSearchApi(self._client._project_id, self._client._project_name)
+        self._opensearch_api = opensearch_api.OpenSearchApi(
+            self._client._project_id, self._client._project_name
+        )
         self._dataset_api = dataset_api.DatasetApi(self._client._project_id)
-        self._kafka_api = kafka_api.KafkaApi(self._client._project_id, self._client._project_name)
-        self._jobs_api = job_api.JobsApi(self._client._project_id, self._client._project_name)
+        self._kafka_api = kafka_api.KafkaApi(
+            self._client._project_id, self._client._project_name
+        )
+        self._jobs_api = job_api.JobsApi(
+            self._client._project_id, self._client._project_name
+        )
 
-        self._fs = hsfs_conn().get_feature_store(self._client._project_name + "_featurestore")
+        self._fs = hsfs_conn().get_feature_store(
+            self._client._project_name + "_featurestore"
+        )
         self._mr = hsml_conn().get_model_registry()
 
-        self._kafka_schema_name = '_'.join([self._client._project_name, self._configs_dict['name'], "observations"])
-        self._kafka_topic_name = '_'.join([self._client._project_name, self._configs_dict['name'], "logObservations"])
+        self._kafka_schema_name = "_".join(
+            [self._client._project_name, self._configs_dict["name"], "observations"]
+        )
+        self._kafka_topic_name = "_".join(
+            [self._client._project_name, self._configs_dict["name"], "logObservations"]
+        )
 
     @classmethod
     def from_response_json(cls, json_dict, project_id, project_name):
@@ -73,7 +88,7 @@ class DecisionEngine(ABC):
         return self
 
     @abstractmethod
-    def build_catalog(self):
+    def build_feature_store(self):
         pass
 
     @abstractmethod
@@ -114,118 +129,209 @@ class DecisionEngine(ABC):
 
 
 class RecommendationDecisionEngine(DecisionEngine):
-    def build_catalog(self):
+    def build_feature_store(self):
+        # Creating product list FG
+        catalog_config = self._configs_dict["product_list"]
 
-        # Creating catalog FG
-        catalog_config = self._configs_dict['product_list']
-
-        fg = self._fs.get_or_create_feature_group(
-            name=self._prefix + catalog_config['feature_view_name'],
-            description='Catalog for the Decision Engine project',
-            primary_key=[catalog_config['primary_key']],
+        items_fg = self._fs.get_or_create_feature_group(
+            name=self._prefix + catalog_config["feature_view_name"],
+            description="Catalog for the Decision Engine project",
+            primary_key=[catalog_config["primary_key"]],
             online_enabled=True,
-            version=1
+            version=1,
         )
 
-        item_features = [Feature(name=feat, type=val['type']) for feat, val in catalog_config['schema'].items()]
-        fg.save(features=item_features)
+        item_features = [
+            Feature(name=feat, type=val["type"])
+            for feat, val in catalog_config["schema"].items()
+        ]
+        items_fg.save(features=item_features)
 
-        self._catalog_df = pd.read_csv(catalog_config['file_path'],
-                                       parse_dates=[feat for feat, val in catalog_config['schema'].items() if
-                                                    val['type'] == 'timestamp'])
-        fg.insert(self._catalog_df[catalog_config['schema'].keys()])
-        # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
+        self._catalog_df = pd.read_csv(
+            catalog_config["file_path"],
+            parse_dates=[
+                feat
+                for feat, val in catalog_config["schema"].items()
+                if val["type"] == "timestamp"
+            ],
+        )
+        items_fg.insert(self._catalog_df[catalog_config["schema"].keys()])
+        # items_fg.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
-        # todo tensorflow errors if col is of type float64, expecting float32
-        for feat, val in catalog_config['schema'].items():
-            if val['type'] == 'float':
+        # TODO tensorflow errors if col is of type float64, expecting float32
+        for feat, val in catalog_config["schema"].items():
+            if val["type"] == "float":
                 self._catalog_df[feat] = self._catalog_df[feat].astype("float32")
 
-        fv = self._fs.get_or_create_feature_view(
-            name=self._prefix + catalog_config['feature_view_name'],
-            query=fg.select_all(),
-            version=1
+        # Creating events FG
+        events_fg = self._fs.get_or_create_feature_group(
+            name=self._prefix + "events",
+            description="Events stream for the Decision Engine project",
+            primary_key=["event_id"],  # TODO autoincrement?
+            online_enabled=True,
+            version=1,
         )
-        # fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
-        fv.create_training_data(write_options={"use_spark": True})
+        # initialize with all possible context features even if user dropped some of them in config
+        events_features = [
+            Feature(name="event_id", type="bigint"),
+            Feature(name="session_id", type="string"),
+            Feature(name="event_timestamp", type="timestamp"),
+            Feature(name="item_id", type="string"),
+            Feature(name="event_type", type="string"),
+            Feature(name="event_value", type="double"), # e.g. 0 or 1 for click, price for purchase
+            Feature(name="event_weight", type="double"), # event_value multiplier
+            Feature(name="longtitude", type="bigint"),
+            Feature(name="latitude", type="bigint"),
+            Feature(name="language", type="string"),
+            Feature(name="useragent", type="string"),
+        ]
+
+        events_fg.save(features=events_features)
+        
+        # Creating events FV
+        events_fv = self._fs.get_or_create_feature_view(
+            name=self._prefix + "events",
+            query=events_fg.select_all(),
+            version=1,
+        )
+        # events_fv.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
+
+        events_fv.create_training_data(write_options={"use_spark": True})
+        td_version, _ = events_fv.create_train_test_split(test_size=0.2, description='Models training dataset',
+                                                            write_options={"wait_for_job": True})
+        
+        # Creating decisions FG
+        decisions_fg = self._fs.get_or_create_feature_group(
+            name=self._prefix + "decisions",
+            description="Decisions logging for the Decision Engine project",
+            primary_key=["decision_id"],  # TODO autoincrement?
+            online_enabled=True,
+            version=1,
+        )
+
+        decisions_features = [
+            Feature(name="decision_id", type="bigint"),
+            Feature(name="session_id", type="string"),
+            Feature(
+                name="session_activity", type=f"ARRAY <{catalog_config['schema'][catalog_config['primary_key']]['type']}>"
+            ),  # item ids that user interacted with (all event types)
+            Feature(
+                name="predicted_items", type=f"ARRAY <{catalog_config['schema'][catalog_config['primary_key']]['type']}>"
+            ),  # item ids received by getDecision
+        ]
+
+        decisions_fg.save(features=decisions_features)
 
     def build_models(self):
-
         # Creating retrieval model
-        catalog_config = self._configs_dict['product_list']
-        retrieval_config = self._configs_dict['model_configuration']['retrieval_model']
+        catalog_config = self._configs_dict["product_list"]
+        retrieval_config = self._configs_dict["model_configuration"]["retrieval_model"]
 
-        pk_index_list = self._catalog_df[self._configs_dict['product_list']['primary_key']].astype(str).unique().tolist()
+        pk_index_list = (
+            self._catalog_df[self._configs_dict["product_list"]["primary_key"]]
+            .astype(str)
+            .unique()
+            .tolist()
+        )
         categories_lists = {}
         text_features = {}
-        for feat, val in catalog_config['schema'].items():
-            if 'transformation' not in val.keys():
+        for feat, val in catalog_config["schema"].items():
+            if "transformation" not in val.keys():
                 continue
-            if val['transformation'] == 'category':
-                categories_lists[feat] = self._catalog_df[feat].astype(str).unique().tolist()
-            elif val['transformation'] == 'text':
+            if val["transformation"] == "category":
+                categories_lists[feat] = (
+                    self._catalog_df[feat].astype(str).unique().tolist()
+                )
+            elif val["transformation"] == "text":
                 text_features[feat] = self._catalog_df[feat].tolist()
 
-        self._embedding_model = ItemCatalogEmbedding(self._configs_dict, pk_index_list, categories_lists)
+        self._candidate_model = ItemCatalogEmbedding(
+            self._configs_dict, pk_index_list, categories_lists
+        )
 
-        for feat, val in catalog_config['schema'].items():
-            if 'transformation' not in val.keys():
+        for feat, val in catalog_config["schema"].items():
+            if "transformation" not in val.keys():
                 continue
-            if val['transformation'] == 'numeric':
-                self._embedding_model.normalized_feats[feat].adapt(self._catalog_df[feat].tolist())
-            elif val['transformation'] == 'text':
-                self._embedding_model.texts_embeddings[feat].layers[0].adapt(self._catalog_df[feat].tolist())
+            if val["transformation"] in ["numeric", "timestamp"]:
+                self._candidate_model.normalized_feats[feat].adapt(
+                    self._catalog_df[feat].tolist()
+                )
+            elif val["transformation"] == "text":
+                self._candidate_model.texts_embeddings[feat].layers[0].adapt(
+                    self._catalog_df[feat].tolist()
+                )
 
-        tf.saved_model.save(self._embedding_model, "embedding_model")
+        self._query_model = SequenceEmbedding(
+            pk_index_list, retrieval_config["item_space_dim"]
+        )
+        self._retrieval_model = RetrievalModel(
+            self._query_model, self._candidate_model, self._catalog_df
+        )
+
+        tf.saved_model.save(self._retrieval_model, "retrieval_model")
 
         embedding_model_input_schema = Schema(self._catalog_df)
-        embedding_model_output_schema = Schema([{
-            "name": "embedding",
-            "type": "double",
-            "shape": [retrieval_config['item_space_dim']],
-        }])
+        embedding_model_output_schema = Schema(
+            [
+                {
+                    "name": "embedding",
+                    "type": "double",
+                    "shape": [retrieval_config["item_space_dim"]],
+                }
+            ]
+        )
 
         embedding_model_schema = ModelSchema(
             input_schema=embedding_model_input_schema,
-            output_schema=embedding_model_output_schema
+            output_schema=embedding_model_output_schema,
         )
         embedding_example = self._catalog_df.sample().to_dict("records")
 
         embedding_model = self._mr.tensorflow.create_model(
-            name=self._prefix + "embedding_model",
+            name=self._prefix + "retrieval_model",
             description="Model that generates embeddings from items catalog features",
             input_example=embedding_example,
             model_schema=embedding_model_schema,
         )
-        embedding_model.save("embedding_model")
+        embedding_model.save("retrieval_model")
         # embedding_model.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
-        # Creating ranking model placeholder
-        file_name = 'ranking_model.pkl'
-        with open(file_name, 'wb') as file:
-            pickle.dump({}, file)
-
-        ranking_model = self._mr.python.create_model(name=self._prefix + "ranking_model",
-                                                     description="Ranking model that scores item candidates")
-        ranking_model.save(model_path='ranking_model.pkl')
+        # Creating ranking model placeholder (later updated in a job)
+        self._ranking_model = RankingModel(self._candidate_model) # TODO add adapt for features in a job
+        tf.saved_model.save(self._ranking_model, "ranking_model")
+        ranking_model = self._mr.tensorflow.create_model(
+            name=self._prefix + "ranking_model",
+            description="Ranking model that scores item candidates",
+        )
+        ranking_model.save("ranking_model")
         # ranking_model.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         # Creating logObservations model for events redirect to Kafka
-        self._redirect_model = self._mr.python.create_model(self._prefix + "logObservations_redirect",
-                                                            description="Workaround model for redirecting observations into Kafka")
-        redirector_script_path = os.path.join("/Projects", self._client._project_name, "Resources",
-                                              "logObservations_redirect_predictor.py").replace('\\', '/')
+        self._redirect_model = self._mr.python.create_model(
+            self._prefix + "logObservations_redirect",
+            description="Workaround model for redirecting observations into Kafka",
+        )
+        redirector_script_path = os.path.join(
+            "/Projects",
+            self._client._project_name,
+            "Resources",
+            "decision-engine",
+            self._name,
+            "logObservations_redirect_predictor.py",
+        ).replace("\\", "/")
         self._redirect_model.save(redirector_script_path, keep_original_files=True)
+        # ranking_model.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
     def build_vector_db(self):
-
         # Creating Opensearch index
         os_client = OpenSearch(**self._opensearch_api.get_default_py_config())
-        catalog_config = self._configs_dict['product_list']
-        retrieval_config = self._configs_dict['model_configuration']['retrieval_model']
+        catalog_config = self._configs_dict["product_list"]
+        retrieval_config = self._configs_dict["model_configuration"]["retrieval_model"]
 
-        index_name = self._opensearch_api.get_project_index(catalog_config['feature_view_name'])
+        index_name = self._opensearch_api.get_project_index(
+            catalog_config["feature_view_name"]
+        )
         index_exists = os_client.indices.exists(index_name)
         # dev:
         if index_exists:
@@ -233,7 +339,9 @@ class RecommendationDecisionEngine(DecisionEngine):
             index_exists = False
 
         if not index_exists:
-            logging.info(f"Opensearch index name {index_name} does not exist. Creating.")
+            logging.info(
+                f"Opensearch index name {index_name} does not exist. Creating."
+            )
             index_body = {
                 "settings": {
                     "knn": True,
@@ -241,28 +349,29 @@ class RecommendationDecisionEngine(DecisionEngine):
                 },
                 "mappings": {
                     "properties": {
-                        self._prefix + "vector": {
+                        self._prefix
+                        + "vector": {
                             "type": "knn_vector",
-                            "dimension": retrieval_config['item_space_dim'],
+                            "dimension": retrieval_config["item_space_dim"],
                             "method": {
                                 "name": "hnsw",
-                                "space_type": retrieval_config['opensearch_index']['space_type'],
-                                "engine": retrieval_config['opensearch_index']['engine'],
-                                "parameters": {
-                                    "ef_construction": 256,
-                                    "m": 48
-                                }
-                            }
+                                "space_type": "innerproduct",
+                                "engine": "faiss",
+                                "parameters": {"ef_construction": 256, "m": 48},
+                            },
                         }
                     }
-                }
+                },
             }
             response = os_client.indices.create(index_name, body=index_body)
 
-        items_ds = tf.data.Dataset.from_tensor_slices({col: self._catalog_df[col] for col in self._catalog_df})
+        items_ds = tf.data.Dataset.from_tensor_slices(
+            {col: self._catalog_df[col] for col in self._catalog_df}
+        )
 
         item_embeddings = items_ds.batch(2048).map(
-            lambda x: (x[catalog_config['primary_key']], self._embedding_model(x)))
+            lambda x: (x[catalog_config["primary_key"]], self._candidate_model(x))
+        )
 
         actions = []
 
@@ -272,50 +381,63 @@ class RecommendationDecisionEngine(DecisionEngine):
             embedding_list = embedding_list.numpy()
 
             for item_id, embedding in zip(item_id_list, embedding_list):
-                actions.append({
-                    "_index": index_name,
-                    "_id": item_id,
-                    "_source": {
-                        self._prefix + "vector": embedding,
+                actions.append(
+                    {
+                        "_index": index_name,
+                        "_id": item_id,
+                        "_source": {
+                            self._prefix + "vector": embedding,
+                        },
                     }
-                })
+                )
         logging.info(f"Example item vectors to be bulked: {actions[:10]}")
         bulk(os_client, actions)
 
     def build_deployments(self):
         # Creating deployment for ranking model
-        mr_ranking_model = self._mr.get_model(name=self._prefix + "ranking_model", version=1)
+        mr_ranking_model = self._mr.get_model(
+            name=self._prefix + "ranking_model", version=1
+        )
 
-        transformer_script_path = os.path.join("/Projects", self._client._project_name, "Resources",
-                                               "ranking_model_transformer.py").replace('\\', '/')
-        predictor_script_path = os.path.join("/Projects", self._client._project_name, "Resources",
-                                             "ranking_model_predictor.py").replace('\\', '/')
+        transformer_script_path = os.path.join(
+            "/Projects",
+            self._client._project_name,
+            "Resources",
+            "ranking_model_transformer.py",
+        ).replace("\\", "/")
+        predictor_script_path = os.path.join(
+            "/Projects",
+            self._client._project_name,
+            "Resources",
+            "ranking_model_predictor.py",
+        ).replace("\\", "/")
 
         # define transformer
-        ranking_transformer = Transformer(script_file=transformer_script_path, resources={"num_instances": 1})
+        ranking_transformer = Transformer(
+            script_file=transformer_script_path, resources={"num_instances": 1}
+        )
 
         ranking_deployment = mr_ranking_model.deploy(
             name=(self._prefix + "ranking_deployment").replace("_", "").lower(),
-            description="Deployment that search for item candidates and scores them based on customer metadata",
+            description="Deployment that searches for item candidates and scores them based on session context",
             script_file=predictor_script_path,
             resources={"num_instances": 1},
             transformer=ranking_transformer,
         )
 
         # Creating deployment for logObservation endpoint
-        mr_redirect_model = self._mr.get_model(name=self._prefix + "logObservations_redirect", version=1)
-        redirector_script_path = os.path.join(self._redirect_model.version_path,
-                                              "logObservations_redirect_predictor.py")
+        redirector_script_path = os.path.join(
+            self._redirect_model.version_path, "logObservations_redirect_predictor.py"
+        )
         deployment = self._redirect_model.deploy(
-            (self._prefix + 'logObservations_redirect_deployment').replace("_", "").lower(),
-            script_file=redirector_script_path)
+            (self._prefix + "logObservations_redirect_deployment")
+            .replace("_", "")
+            .lower(),
+            script_file=redirector_script_path,
+        )
 
         # creating Kafka topic for logObservation endpoint
-        avro_schema = {
-            "type": "record",
-            "name": "observations",
-            "fields": []
-        }
+        avro_schema = {"type": "record", "name": "observations", "fields": []}
 
         self._kafka_api.create_schema(self._kafka_schema_name, avro_schema)
         # dev:
@@ -323,92 +445,112 @@ class RecommendationDecisionEngine(DecisionEngine):
             self._kafka_api._delete_topic(self._kafka_topic_name)
         except Exception:
             pass
-        my_topic = self._kafka_api.create_topic(self._kafka_topic_name, self._kafka_schema_name, 1, replicas=1,
-                                                partitions=1)
+        my_topic = self._kafka_api.create_topic(
+            self._kafka_topic_name, self._kafka_schema_name, 1, replicas=1, partitions=1
+        )
 
     def build_jobs(self):
-
-        # The job retraining the ranking model. Compares the size of current training dataset and "observations" FG.
-        # If diff > 10%, creates new training dataset, retrains ranking model and updates deployment.
-        spark_config = self._jobs_api.get_configuration("PYTHON")
-        spark_config['appPath'] = "/Resources/ranking_model_retrain_job.py"
-        job = self._jobs_api.create_job(self._prefix + "ranking_model_retrain_job", spark_config)
+        # The job retraining the models. 
+        py_config = self._jobs_api.get_configuration("PYTHON")
+        py_config["appPath"] = "/Resources/retrain_job.py"
+        py_config["defaultArgs"] = f"-project_name {self._name}"
+        job = self._jobs_api.create_job(
+            self._prefix + "retrain_job", py_config
+        )
 
         # The job for consuming observations from Kafka topic. Runs on schedule, inserts stream into observations FG.
         # On the first run, autodetects event schema and creates "observations" FG, "training" FV and empty training dataset.
         spark_config = self._jobs_api.get_configuration("PYSPARK")
-        spark_config['appPath'] = "/Resources/logObservations_consume_job.py"
-        job = self._jobs_api.create_job(self._prefix + "logObservations_consume_job", spark_config)
+        spark_config["appPath"] = "/Resources/logObservations_consume_job.py" # TODO rework job for new events type
+        job = self._jobs_api.create_job(
+            self._prefix + "logObservations_consume_job", spark_config
+        )
 
 
 class ItemCatalogEmbedding(tf.keras.Model):
+    """
+    Candidate embedding tower of the Retrieval model
+    """
 
-    def __init__(self, configs_dict: dict, pk_index_list: List[str], categories_lists: Dict[str, List[str]]):
+    def __init__(
+        self,
+        configs_dict: dict,
+        pk_index_list: List[str],
+        categories_lists: Dict[str, List[str]],
+    ):
         super().__init__()
 
         self._configs_dict = configs_dict
-        item_space_dim = self._configs_dict['model_configuration']['retrieval_model']['item_space_dim']
+        item_space_dim = self._configs_dict["model_configuration"]["retrieval_model"][
+            "item_space_dim"
+        ]
 
-        self.pk_embedding = tf.keras.Sequential([
-            StringLookup(
-                vocabulary=pk_index_list,
-                mask_token=None
-            ),
-            tf.keras.layers.Embedding(
-                # We add an additional embedding to account for unknown tokens.
-                len(pk_index_list) + 1,
-                item_space_dim
-            )
-        ])
+        self.pk_embedding = tf.keras.Sequential(
+            [
+                StringLookup(vocabulary=pk_index_list, mask_token=None),
+                tf.keras.layers.Embedding(
+                    # We add an additional embedding to account for unknown tokens.
+                    len(pk_index_list) + 1,
+                    item_space_dim,
+                ),
+            ]
+        )
 
         self.categories_tokenizers = {}
         self.categories_lens = {}
         for feat, lst in categories_lists.items():
-            self.categories_tokenizers[feat] = tf.keras.layers.StringLookup(vocabulary=lst, mask_token=None)
+            self.categories_tokenizers[feat] = tf.keras.layers.StringLookup(
+                vocabulary=lst, mask_token=None
+            )
             self.categories_lens[feat] = len(lst)
 
         vocab_size = 1000
         self.texts_embeddings = {}
         self.normalized_feats = {}
-        for feat, val in self._configs_dict['product_list']['schema'].items():
-            if 'transformation' not in val.keys():
+        for feat, val in self._configs_dict["product_list"]["schema"].items():
+            if "transformation" not in val.keys():
                 continue
-            if val['transformation'] == 'text':
-                self.texts_embeddings[feat] = tf.keras.Sequential([
-                    TextVectorization(
-                        max_tokens=vocab_size,
-                        output_mode="int",
-                        output_sequence_length=100,
-                    ),
-                    tf.keras.layers.Embedding(
-                        vocab_size,
-                        item_space_dim,
-                    )
-                ])
-            elif val['transformation'] == 'numeric':
+            if val["transformation"] == "text":
+                self.texts_embeddings[feat] = tf.keras.Sequential(
+                    [
+                        TextVectorization(
+                            max_tokens=vocab_size,
+                        ),
+                        tf.keras.layers.Embedding(
+                            vocab_size, item_space_dim, mask_zero=True
+                        ),
+                        tf.keras.layers.GlobalAveragePooling1D(),
+                    ]
+                )
+            elif val["transformation"] in ["numeric", "timestamp"]:
                 self.normalized_feats[feat] = tf.keras.layers.Normalization(axis=None)
 
-
-        self.fnn = tf.keras.Sequential([
-            tf.keras.layers.Dense(item_space_dim, activation="relu"),
-            tf.keras.layers.Dense(item_space_dim)
-        ])
+        self.fnn = tf.keras.Sequential(
+            [
+                tf.keras.layers.Dense(item_space_dim, activation="relu"),
+                tf.keras.layers.Dense(item_space_dim),
+            ]
+        )
 
     def call(self, inputs):
+        layers = [self.pk_embedding(inputs[self._configs_dict["primary_key"]])]
 
-        layers = [
-            self.pk_embedding(inputs[self._configs_dict['primary_key']])
-        ]
-
-        for feat, val in self._configs_dict['product_list']['schema'].items():
-            if 'transformation' not in val.keys():
+        for feat, val in self._configs_dict["product_list"]["schema"].items():
+            if "transformation" not in val.keys():
                 continue
-            if val['transformation'] == 'category':
-                layers.append(tf.one_hot(self.categories_tokenizers[feat](inputs[feat]), self.categories_lens[feat]))
-            elif val['transformation'] == 'text':
+            if val["transformation"] == "category":
+                layers.append(
+                    tf.one_hot(
+                        self.categories_tokenizers[feat](inputs[feat]),
+                        self.categories_lens[feat],
+                    )
+                )
+            elif val["transformation"] == "text":
                 layers.append(self.texts_embeddings[feat](inputs[feat]))
-            elif val['transformation'] == 'numeric':
-                layers.append(tf.reshape(self.normalized_feats[feat](inputs[feat]), (-1, 1)))
+            elif val["transformation"] in ["numeric", "timestamp"]:
+                layers.append(
+                    tf.reshape(self.normalized_feats[feat](inputs[feat]), (-1, 1))
+                )
 
         concatenated_inputs = tf.concat(layers, axis=1)
         outputs = self.fnn(concatenated_inputs)
@@ -416,11 +558,153 @@ class ItemCatalogEmbedding(tf.keras.Model):
         return outputs
 
 
+class SequenceEmbedding(tf.keras.Model):
+    """
+    Query embedding tower of the Retrieval model
+    """
+
+    def __init__(self, pk_index_list, item_space_dim):
+        super(SequenceEmbedding, self).__init__()
+        self.string_lookup = tf.keras.layers.StringLookup(
+            vocabulary=pk_index_list, mask_token=None
+        )
+        self.embedding = tf.keras.layers.Embedding(
+            len(pk_index_list) + 1, item_space_dim
+        )
+        self.gru = tf.keras.layers.GRU(item_space_dim)
+
+    def call(self, inputs):
+        x = self.string_lookup(inputs)
+        x = self.embedding(x)
+        x = self.gru(x)
+        return x
+
+
+class RetrievalModel(tfrs.Model):
+    """
+    Two-tower Retrieval model.
+    """
+
+    def __init__(self, query_model, candidate_model, catalog_df):
+        super().__init__()
+        self._query_model = query_model
+        self._candidate_model = candidate_model
+
+        self._task = tfrs.tasks.Retrieval(
+            metrics=tfrs.metrics.FactorizedTopK(
+                candidates=catalog_df.batch(128).map(self._candidate_model)
+            )
+        )
+
+    def compute_loss(self, features, training=False):
+        item_history = features["context_item_ids"]
+        label_item_features = features["label_item_features"]
+
+        query_embedding = self._query_model(item_history)
+        candidate_embedding = self._candidate_model(label_item_features)
+
+        return self._task(
+            query_embedding, candidate_embedding, compute_metrics=not training
+        )
+
+
+class SessionModel(tf.keras.Model):
+    """
+    Session embedding model used in the Ranking model
+    """
+
+    def __init__(self, candidate_model):
+        super().__init__()
+        self._candidate_model = candidate_model
+        self._available_feature_transformations = {
+            "longtitude": self.longtitude,
+            "latitude": self.latitude,
+            "language": self.language,
+            "useragent": self.useragent,
+        }
+
+        self.latitude = tf.keras.layers.Normalization(axis=None)
+        self.longtitude = tf.keras.layers.Normalization(axis=None)
+
+        language_codes = langcodes.Language.make_group("all")
+        self.language = tf.keras.layers.StringLookup(
+            vocabulary=language_codes, mask_token=None
+        )
+        self.language_len = len(language_codes)
+
+        vocab_size = 100
+        text_embed_size = 16
+        self.useragent = tf.keras.Sequential(
+            [
+                TextVectorization(
+                    max_tokens=vocab_size,
+                ),
+                tf.keras.layers.Embedding(vocab_size, text_embed_size, mask_zero=True),
+                tf.keras.layers.GlobalAveragePooling1D(),
+            ]
+        )
+
+        # Compute predictions.
+        self.ratings = tf.keras.Sequential(
+            [
+                # Learn multiple dense layers.
+                tf.keras.layers.Dense(256, activation="relu"),
+                tf.keras.layers.Dense(64, activation="relu"),
+                # Make rating predictions in the final layer.
+                tf.keras.layers.Dense(1),
+            ]
+        )
+
+    def call(self, inputs):
+        item_features = inputs["item_features"]
+        session_features = inputs["session_features"]
+
+        candidate_embedding = self._candidate_model(item_features)
+
+        session_embedding = []
+        for feature in session_features:
+            if feature in self._available_feature_transformations:
+                session_embedding.append(
+                    self._available_feature_transformations[feature](
+                        session_features[feature]
+                    )
+                )
+
+        return self.ratings(
+            tf.concat(session_embedding + [candidate_embedding], axis=1)
+        )
+
+
+class RankingModel(tfrs.models.Model):
+    """
+    Ranking model.
+    """
+
+    def __init__(self, candidate_model):
+        super().__init__()
+        self._ranking_model = SessionModel(candidate_model)
+        self.task: tf.keras.layers.Layer = tfrs.tasks.Ranking(
+            loss=tf.keras.losses.MeanSquaredError(),
+            metrics=[tf.keras.metrics.RootMeanSquaredError()],
+        )
+
+    def call(self, inputs):
+        return self._ranking_model(inputs)
+
+    def compute_loss(self, inputs, training=False):
+        labels = inputs.pop("score")
+
+        rating_predictions = self(inputs)
+
+        # The task computes the loss and the metrics.
+        return self.task(labels=labels, predictions=rating_predictions)
+
+
 class SearchDecisionEngine(DecisionEngine):
     def __init__(self, config):
         self.config = config
 
-    def build_catalog(self):
+    def build_feature_store(self):
         # Implement logic to create feature groups for search engine based on config
         pass
 
