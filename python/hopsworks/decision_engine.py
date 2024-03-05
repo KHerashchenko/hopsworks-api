@@ -268,8 +268,11 @@ class RecommendationDecisionEngine(DecisionEngine):
         self._query_model = SequenceEmbedding(
             pk_index_list, retrieval_config["item_space_dim"]
         )
+        
+        catalog_ds = tf.data.Dataset.from_tensor_slices({col: self._catalog_df[col] for col in self._catalog_df})
+
         self._retrieval_model = RetrievalModel(
-            self._query_model, self._candidate_model, self._catalog_df
+            self._query_model, self._candidate_model, catalog_ds
         )
 
         tf.saved_model.save(self._retrieval_model, "retrieval_model")
@@ -598,12 +601,11 @@ class RetrievalModel(tfrs.Model):
     Two-tower Retrieval model.
     """
 
-    def __init__(self, query_model, candidate_model, catalog_df):
+    def __init__(self, query_model, candidate_model, catalog_ds):
         super().__init__()
         self._query_model = query_model
         self._candidate_model = candidate_model
 
-        catalog_ds = tf.data.Dataset.from_tensor_slices({col: catalog_df[col] for col in catalog_df})
         self._task = tfrs.tasks.Retrieval(
             metrics=tfrs.metrics.FactorizedTopK(
                 candidates=catalog_ds.batch(128).map(self._candidate_model)
