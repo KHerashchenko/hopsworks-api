@@ -273,12 +273,14 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         self._retrieval_model = RetrievalModel(
             self._query_model, self._candidate_model, catalog_ds
-        )
+        ) 
 
-        tf.saved_model.save(self._retrieval_model, "retrieval_model")
+        tf.saved_model.save(self._candidate_model, "candidate_model")
+        tf.saved_model.save(self._query_model, "query_model")
 
-        embedding_model_input_schema = Schema(self._catalog_df)
-        embedding_model_output_schema = Schema(
+        candidate_model_schema = ModelSchema(
+            input_schema=Schema(self._catalog_df),
+            output_schema=Schema(
             [
                 {
                     "name": "embedding",
@@ -287,21 +289,24 @@ class RecommendationDecisionEngine(DecisionEngine):
                 }
             ]
         )
-
-        embedding_model_schema = ModelSchema(
-            input_schema=embedding_model_input_schema,
-            output_schema=embedding_model_output_schema,
+,
         )
-        embedding_example = self._catalog_df.sample().to_dict("records")
+        candidate_example = self._catalog_df.sample().to_dict("records")
 
-        embedding_model = self._mr.tensorflow.create_model(
+        candidate_model = self._mr.tensorflow.create_model(
             name=self._prefix + "retrieval_model",
             description="Model that generates embeddings from items catalog features",
-            input_example=embedding_example,
-            model_schema=embedding_model_schema,
+            input_example=candidate_example,
+            model_schema=candidate_model_schema,
         )
-        embedding_model.save("retrieval_model")
-        # embedding_model.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
+        candidate_model.save("candidate_model")
+
+        query_model = self._mr.tensorflow.create_model(
+            name=self._prefix + "query_model",
+            description="Model that generates embeddings from session interaction sequence",
+            # TODO add input/output examples
+        )
+        query_model.save("query_model")
 
         # Creating ranking model placeholder (later updated in a job)
         self._ranking_model = RankingModel(self._candidate_model) # TODO add adapt for features in a job
@@ -430,6 +435,8 @@ class RecommendationDecisionEngine(DecisionEngine):
             resources={"num_instances": 1},
             transformer=ranking_transformer,
         )
+        
+        # TODO Creating query model deployment
 
         # Creating deployment for logObservation endpoint
         redirector_script_path = os.path.join(
@@ -626,7 +633,7 @@ class RetrievalModel(tfrs.Model):
 
 class SessionModel(tf.keras.Model):
     """
-    Session embedding model used in the Ranking model
+    Session embedding model used in the Ranking model.
     """
 
     def __init__(self, candidate_model):
@@ -698,14 +705,14 @@ class RankingModel(tfrs.models.Model):
 
     def __init__(self, candidate_model):
         super().__init__()
-        self._ranking_model = SessionModel(candidate_model)
+        self._session_model = SessionModel(candidate_model)
         self.task: tf.keras.layers.Layer = tfrs.tasks.Ranking(
             loss=tf.keras.losses.MeanSquaredError(),
             metrics=[tf.keras.metrics.RootMeanSquaredError()],
         )
 
     def call(self, inputs):
-        return self._ranking_model(inputs)
+        return self._session_model(inputs)
 
     def compute_loss(self, inputs, training=False):
         labels = inputs.pop("score")
