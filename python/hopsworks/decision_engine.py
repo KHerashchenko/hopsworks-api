@@ -265,17 +265,12 @@ class RecommendationDecisionEngine(DecisionEngine):
                     self._catalog_df[feat].tolist()
                 )
 
+        tf.saved_model.save(self._candidate_model, "candidate_model")
+        
         self._query_model = SequenceEmbedding(
             pk_index_list, retrieval_config["item_space_dim"]
         )
-        
-        catalog_ds = tf.data.Dataset.from_tensor_slices({col: self._catalog_df[col] for col in self._catalog_df})
 
-        self._retrieval_model = RetrievalModel(
-            self._query_model, self._candidate_model, catalog_ds
-        ) 
-
-        tf.saved_model.save(self._candidate_model, "candidate_model")
         tf.saved_model.save(self._query_model, "query_model")
 
         candidate_model_schema = ModelSchema(
@@ -504,9 +499,7 @@ class ItemCatalogEmbedding(tf.keras.Model):
         super().__init__()
 
         self._configs_dict = configs_dict
-        item_space_dim = self._configs_dict["model_configuration"]["retrieval_model"][
-            "item_space_dim"
-        ]
+        item_space_dim = self._configs_dict["model_configuration"]["retrieval_model"]["item_space_dim"]
 
         self.pk_embedding = tf.keras.Sequential(
             [
@@ -556,7 +549,13 @@ class ItemCatalogEmbedding(tf.keras.Model):
         )
 
     def call(self, inputs):
-        layers = [self.pk_embedding(inputs[self._configs_dict['product_list']["primary_key"]])]
+        # Explicitly name input tensors
+        pk_inputs = inputs[self._configs_dict['product_list']["primary_key"]]
+        category_inputs = {feat: inputs[feat] for feat in self.categories_tokenizers}
+        text_inputs = {feat: inputs[feat] for feat in self.texts_embeddings}
+        numeric_inputs = {feat: inputs[feat] for feat in self.normalized_feats}
+
+        layers = [self.pk_embedding(pk_inputs)]
 
         for feat, val in self._configs_dict["product_list"]["schema"].items():
             if "transformation" not in val.keys():
@@ -564,21 +563,22 @@ class ItemCatalogEmbedding(tf.keras.Model):
             if val["transformation"] == "category":
                 layers.append(
                     tf.one_hot(
-                        self.categories_tokenizers[feat](inputs[feat]),
+                        self.categories_tokenizers[feat](category_inputs[feat]),
                         self.categories_lens[feat],
                     )
                 )
             elif val["transformation"] == "text":
-                layers.append(self.texts_embeddings[feat](inputs[feat]))
+                layers.append(self.texts_embeddings[feat](text_inputs[feat]))
             elif val["transformation"] in ["numeric", "timestamp"]:
                 layers.append(
-                    tf.reshape(self.normalized_feats[feat](inputs[feat]), (-1, 1))
+                    tf.reshape(self.normalized_feats[feat](numeric_inputs[feat]), (-1, 1))
                 )
 
         concatenated_inputs = tf.concat(layers, axis=1)
         outputs = self.fnn(concatenated_inputs)
 
         return outputs
+
 
 
 class SequenceEmbedding(tf.keras.Model):
