@@ -546,7 +546,7 @@ class ItemCatalogEmbedding(tf.keras.Model):
         )
 
     def call(self, inputs):
-        layers = [self.pk_embedding(inputs[self._configs_dict["primary_key"]])]
+        layers = [self.pk_embedding(inputs[self._configs_dict['product_list']["primary_key"]])]
 
         for feat, val in self._configs_dict["product_list"]["schema"].items():
             if "transformation" not in val.keys():
