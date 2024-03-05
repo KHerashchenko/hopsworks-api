@@ -159,10 +159,11 @@ class RecommendationDecisionEngine(DecisionEngine):
         # items_fg.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         # TODO tensorflow errors if col is of type float64, expecting float32
+        # TODO where timestamp feature transformation should happen? (converting into unix format)
         for feat, val in catalog_config["schema"].items():
             if val["type"] == "float":
                 self._catalog_df[feat] = self._catalog_df[feat].astype("float32")
-            if val["transformation"] == "timestamp":
+            if "transformation" in val.keys() and val["transformation"] == "timestamp":
                 self._catalog_df[feat] = self._catalog_df[feat].astype(np.int64) // 10**9
                 
         # Creating events FG
@@ -183,7 +184,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             Feature(name="event_type", type="string"),
             Feature(name="event_value", type="double"), # e.g. 0 or 1 for click, price for purchase
             Feature(name="event_weight", type="double"), # event_value multiplier
-            Feature(name="longtitude", type="bigint"),
+            Feature(name="longtitude", type="bigint"), # TODO does it make sense to normalise session into separate fg?
             Feature(name="latitude", type="bigint"),
             Feature(name="language", type="string"),
             Feature(name="useragent", type="string"),
