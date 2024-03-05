@@ -604,17 +604,18 @@ class RetrievalModel(tfrs.Model):
         self._query_model = query_model
         self._candidate_model = candidate_model
 
+        catalog_ds = tf.data.Dataset.from_tensor_slices({col: catalog_df[col] for col in catalog_df})
         self._task = tfrs.tasks.Retrieval(
             metrics=tfrs.metrics.FactorizedTopK(
-                candidates=catalog_df.batch(128).map(self._candidate_model)
+                candidates=catalog_ds.batch(128).map(self._candidate_model)
             )
         )
 
     def compute_loss(self, features, training=False):
-        item_history = features["context_item_ids"]
-        label_item_features = features["label_item_features"]
+        context_item_ids = features["context_item_ids"]
+        label_item_features = features.drop(columns=["context_item_ids"])
 
-        query_embedding = self._query_model(item_history)
+        query_embedding = self._query_model(context_item_ids)
         candidate_embedding = self._candidate_model(label_item_features)
 
         return self._task(
