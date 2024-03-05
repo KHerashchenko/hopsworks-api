@@ -8,7 +8,7 @@ import langcodes
 
 import os
 import humps
-import numpy
+import numpy as np
 import pandas as pd
 
 from hopsworks import client
@@ -253,9 +253,13 @@ class RecommendationDecisionEngine(DecisionEngine):
         for feat, val in catalog_config["schema"].items():
             if "transformation" not in val.keys():
                 continue
-            if val["transformation"] in ["numeric", "timestamp"]:
+            if val["transformation"] == "numeric":
                 self._candidate_model.normalized_feats[feat].adapt(
                     self._catalog_df[feat].tolist()
+                )            
+            elif val["transformation"] == "timestamp":
+                self._candidate_model.normalized_feats[feat].adapt(
+                    (self._catalog_df[feat].astype(np.int64) // 10**9).tolist()
                 )
             elif val["transformation"] == "text":
                 self._candidate_model.texts_embeddings[feat].layers[0].adapt(
