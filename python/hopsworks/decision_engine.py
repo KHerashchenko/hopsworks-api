@@ -162,7 +162,8 @@ class RecommendationDecisionEngine(DecisionEngine):
                 self._catalog_df[feat] = self._catalog_df[feat].astype("float32")
             if "transformation" in val.keys() and val["transformation"] == "timestamp":
                 self._catalog_df[feat] = self._catalog_df[feat].astype(np.int64) // 10**9
-                
+        self._catalog_df[catalog_config['primary_key']] = self._catalog_df[catalog_config['primary_key']].astype(str)
+                        
         # Creating events FG
         events_fg = self._fs.get_or_create_feature_group(
             name=self._prefix + "events",
@@ -230,7 +231,6 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         pk_index_list = (
             self._catalog_df[self._configs_dict["product_list"]["primary_key"]]
-            .astype(str)
             .unique()
             .tolist()
         )
@@ -427,6 +427,23 @@ class RecommendationDecisionEngine(DecisionEngine):
         )
         
         # TODO Creating query model deployment
+        mr_ranking_model = self._mr.get_model(
+            name=self._prefix + "query_model", version=1
+        )
+
+
+        transformer_script_path = os.path.join(
+            "/Projects",
+            self._client._project_name,
+            "Resources",
+            "ranking_model_transformer.py",
+        )
+        predictor_script_path = os.path.join(
+            "/Projects",
+            self._client._project_name,
+            "Resources",
+            "ranking_model_predictor.py",
+        )
 
         # Creating deployment for events endpoint
         redirector_script_path = os.path.join(
@@ -462,18 +479,19 @@ class RecommendationDecisionEngine(DecisionEngine):
             self._prefix + "retrain_job", py_config
         )
 
-        # The job for consuming observations from Kafka topic. Runs on schedule, inserts stream into observations FG.
-        # On the first run, autodetects event schema and creates "observations" FG, "training" FV and empty training dataset.
+        # The job consuming events from Kafka topic.
         spark_config = self._jobs_api.get_configuration("PYSPARK")
         spark_config["appPath"] = os.path.join(
             "/Projects",
             self._client._project_name,
             "Resources",
             "events_consume_job.py",
-        ) # TODO rework job for new events type
+        )
         job = self._jobs_api.create_job(
             self._prefix + "events_consume_job", spark_config
         )
+        
+        # TODO create a job for retraining models if product list is updated
 
 
 class ItemCatalogEmbedding(tf.keras.Model):
