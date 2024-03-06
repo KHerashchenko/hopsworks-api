@@ -59,11 +59,9 @@ class DecisionEngine(ABC):
         )
         self._mr = hsml_conn().get_model_registry()
 
-        self._kafka_schema_name = "_".join(
-            [self._client._project_name, self._configs_dict["name"], "observations"]
-        )
+        self._kafka_schema_name = self._prefix + "events" + "_1"
         self._kafka_topic_name = "_".join(
-            [self._client._project_name, self._configs_dict["name"], "logObservations"]
+            [self._client._project_name, self._configs_dict["name"], "events"]
         )
 
     @classmethod
@@ -312,10 +310,10 @@ class RecommendationDecisionEngine(DecisionEngine):
         ranking_model.save("ranking_model")
         # ranking_model.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
-        # Creating logObservations model for events redirect to Kafka
+        # Creating Redirect model for events redirect to Kafka
         self._redirect_model = self._mr.python.create_model(
-            self._prefix + "logObservations_redirect",
-            description="Workaround model for redirecting observations into Kafka",
+            self._prefix + "events_redirect",
+            description="Workaround model for redirecting events into Kafka",
         )
         redirector_script_path = os.path.join(
             "/Projects",
@@ -323,7 +321,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             "Resources",
             "decision-engine",
             self._name,
-            "logObservations_redirect_predictor.py",
+            "events_redirect_predictor.py",
         )
         self._redirect_model.save(redirector_script_path, keep_original_files=True)
         # ranking_model.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
@@ -417,7 +415,6 @@ class RecommendationDecisionEngine(DecisionEngine):
             "ranking_model_predictor.py",
         )
 
-        # define transformer
         ranking_transformer = Transformer(
             script_file=transformer_script_path, resources={"num_instances": 1}
         )
@@ -432,21 +429,17 @@ class RecommendationDecisionEngine(DecisionEngine):
         
         # TODO Creating query model deployment
 
-        # Creating deployment for logObservation endpoint
+        # Creating deployment for events endpoint
         redirector_script_path = os.path.join(
-            self._redirect_model.version_path, "logObservations_redirect_predictor.py"
+            self._redirect_model.version_path, "events_redirect_predictor.py"
         )
         deployment = self._redirect_model.deploy(
-            (self._prefix + "logObservations_redirect_deployment")
+            (self._prefix + "events_redirect_deployment")
             .replace("_", "")
             .lower(),
             script_file=redirector_script_path,
         )
-
-        # creating Kafka topic for logObservation endpoint
-        avro_schema = {"type": "record", "name": "observations", "fields": []}
-
-        self._kafka_api.create_schema(self._kafka_schema_name, avro_schema)
+        
         # dev:
         try:
             self._kafka_api._delete_topic(self._kafka_topic_name)
