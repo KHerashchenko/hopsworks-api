@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import List, Dict, Text
 from dataclasses import dataclass
-import langcodes
 
 import os
 import humps
@@ -643,7 +642,7 @@ class SessionModel(tf.keras.Model):
         self.latitude = tf.keras.layers.Normalization(axis=None)
         self.longtitude = tf.keras.layers.Normalization(axis=None)
 
-        language_codes = langcodes.Language.make_group("all")
+        language_codes = ['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv'] # TODO provide full list
         self.language = tf.keras.layers.StringLookup(
             vocabulary=language_codes, mask_token=None
         )
