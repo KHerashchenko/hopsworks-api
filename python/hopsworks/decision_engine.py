@@ -289,7 +289,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         candidate_example = self._catalog_df.sample().to_dict("records")
 
         candidate_model = self._mr.tensorflow.create_model(
-            name=self._prefix + "retrieval_model",
+            name=self._prefix + "candidate_model",
             description="Model that generates embeddings from items catalog features",
             input_example=candidate_example,
             model_schema=candidate_model_schema,
@@ -639,12 +639,6 @@ class SessionModel(tf.keras.Model):
     def __init__(self, candidate_model):
         super().__init__()
         self._candidate_model = candidate_model
-        self._available_feature_transformations = {
-            "longtitude": self.longtitude,
-            "latitude": self.latitude,
-            "language": self.language,
-            "useragent": self.useragent,
-        }
 
         self.latitude = tf.keras.layers.Normalization(axis=None)
         self.longtitude = tf.keras.layers.Normalization(axis=None)
@@ -667,6 +661,13 @@ class SessionModel(tf.keras.Model):
             ]
         )
 
+        self._available_feature_transformations = {
+            "longtitude": self.longtitude,
+            "latitude": self.latitude,
+            "language": self.language,
+            "useragent": self.useragent,
+        }
+        
         # Compute predictions.
         self.ratings = tf.keras.Sequential(
             [
