@@ -320,7 +320,6 @@ class RecommendationDecisionEngine(DecisionEngine):
             self._client._project_name,
             "Resources",
             "decision-engine",
-            self._name,
             "events_redirect_predictor.py",
         )
         self._redirect_model.save(redirector_script_path, keep_original_files=True)
