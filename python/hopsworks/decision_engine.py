@@ -410,6 +410,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             "/Projects",
             self._client._project_name,
             "Resources",
+            "decision-engine",
             "ranking_model_transformer.py",
         )
         ranking_transformer = Transformer(
@@ -431,6 +432,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             "/Projects",
             self._client._project_name,
             "Resources",
+            "decision-engine",
             "query_model_transformer.py",
         )
         query_transformer = Transformer(
@@ -471,6 +473,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             "/Projects",
             self._client._project_name,
             "Resources",
+            "decision-engine",
             "retrain_job.py",
         )
         py_config["defaultArgs"] = f"-project_name {self._name}"
@@ -484,6 +487,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             "/Projects",
             self._client._project_name,
             "Resources",
+            "decision-engine",
             "events_consume_job.py",
         )
         job = self._jobs_api.create_job(
