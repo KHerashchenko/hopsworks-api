@@ -144,6 +144,13 @@ class RecommendationDecisionEngine(DecisionEngine):
         ]
         items_fg.save(features=item_features)
 
+        # Creating items FV
+        items_fv = self._fs.get_or_create_feature_view(
+            name=self._prefix + catalog_config["feature_view_name"],
+            query=items_fg.select_all(),
+            version=1,
+        )
+        
         self._catalog_df = pd.read_csv(
             catalog_config["file_path"],
             parse_dates=[
@@ -264,12 +271,6 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         tf.saved_model.save(self._candidate_model, "candidate_model")
         
-        self._query_model = SequenceEmbedding(
-            pk_index_list, retrieval_config["item_space_dim"]
-        )
-
-        tf.saved_model.save(self._query_model, "query_model")
-
         candidate_model_schema = ModelSchema(
             input_schema=Schema(self._catalog_df),
             output_schema=Schema(
@@ -280,8 +281,7 @@ class RecommendationDecisionEngine(DecisionEngine):
                     "shape": [retrieval_config["item_space_dim"]],
                 }
             ]
-        )
-,
+        ),
         )
         candidate_example = self._catalog_df.sample().to_dict("records")
 
@@ -292,6 +292,11 @@ class RecommendationDecisionEngine(DecisionEngine):
             model_schema=candidate_model_schema,
         )
         candidate_model.save("candidate_model")
+
+        self._query_model = SequenceEmbedding(
+            pk_index_list, retrieval_config["item_space_dim"]
+        )
+        tf.saved_model.save(self._query_model, "query_model")
 
         query_model = self._mr.tensorflow.create_model(
             name=self._prefix + "query_model",
@@ -406,12 +411,6 @@ class RecommendationDecisionEngine(DecisionEngine):
             self._client._project_name,
             "Resources",
             "ranking_model_transformer.py",
-        )
-        predictor_script_path = os.path.join(
-            "/Projects",
-            self._client._project_name,
-            "Resources",
-            "ranking_model_predictor.py",
         )
 
         ranking_transformer = Transformer(
@@ -610,34 +609,6 @@ class SequenceEmbedding(tf.keras.Model):
         x = self.embedding(x)
         x = self.gru(x)
         return x
-
-
-class RetrievalModel(tfrs.Model):
-    """
-    Two-tower Retrieval model.
-    """
-
-    def __init__(self, query_model, candidate_model, catalog_ds):
-        super().__init__()
-        self._query_model = query_model
-        self._candidate_model = candidate_model
-
-        self._task = tfrs.tasks.Retrieval(
-            metrics=tfrs.metrics.FactorizedTopK(
-                candidates=catalog_ds.batch(128).map(self._candidate_model)
-            )
-        )
-
-    def compute_loss(self, features, training=False):
-        context_item_ids = features["context_item_ids"]
-        label_item_features = features.drop(columns=["context_item_ids"])
-
-        query_embedding = self._query_model(context_item_ids)
-        candidate_embedding = self._candidate_model(label_item_features)
-
-        return self._task(
-            query_embedding, candidate_embedding, compute_metrics=not training
-        )
 
 
 class SessionModel(tf.keras.Model):
