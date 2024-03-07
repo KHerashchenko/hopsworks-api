@@ -412,36 +412,36 @@ class RecommendationDecisionEngine(DecisionEngine):
             "Resources",
             "ranking_model_transformer.py",
         )
-
         ranking_transformer = Transformer(
             script_file=transformer_script_path, resources={"num_instances": 1}
         )
 
         ranking_deployment = mr_ranking_model.deploy(
             name=(self._prefix + "ranking_deployment").replace("_", "").lower(),
-            description="Deployment that searches for item candidates and scores them based on session context",
-            script_file=predictor_script_path,
+            description="Deployment that searches for item candidates and scores them based on session context and query embedding",
             resources={"num_instances": 1},
             transformer=ranking_transformer,
         )
         
-        # TODO Creating query model deployment
-        mr_ranking_model = self._mr.get_model(
+        mr_query_model = self._mr.get_model(
             name=self._prefix + "query_model", version=1
         )
-
-
+        
         transformer_script_path = os.path.join(
             "/Projects",
             self._client._project_name,
             "Resources",
-            "ranking_model_transformer.py",
+            "query_model_transformer.py",
         )
-        predictor_script_path = os.path.join(
-            "/Projects",
-            self._client._project_name,
-            "Resources",
-            "ranking_model_predictor.py",
+        query_transformer = Transformer(
+            script_file=transformer_script_path, resources={"num_instances": 1}
+        )
+
+        query_deployment = mr_query_model.deploy(
+            name=(self._prefix + "query_deployment").replace("_", "").lower(),
+            description="Deployment that computes query embedding from session activity",
+            resources={"num_instances": 1},
+            transformer=query_transformer,
         )
 
         # Creating deployment for events endpoint
