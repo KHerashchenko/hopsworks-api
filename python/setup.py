@@ -18,8 +18,8 @@ setup(
     name="hopsworks",
     version=__version__,
     install_requires=[
-        "hsfs @ git+https://git@github.com/logicalclocks/feature-store-api@master#egg=hsfs[python]&subdirectory=python",
-        "hsml @ git+https://git@github.com/logicalclocks/machine-learning-api@0ddbcaa18b9bc4b679b48f9bc68d8925d261a321#egg=hsml&subdirectory=python",
+        "hsfs @ git+https://git@github.com/logicalclocks/feature-store-api@branch-3.7#egg=hsfs&subdirectory=python",
+        "hsml @ git+https://git@github.com/logicalclocks/machine-learning-api@branch-3.7#egg=hsml&subdirectory=python",
         "pyhumps==1.6.1",
         "requests",
         "furl",
