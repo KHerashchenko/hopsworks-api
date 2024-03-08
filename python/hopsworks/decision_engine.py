@@ -189,8 +189,8 @@ class RecommendationDecisionEngine(DecisionEngine):
             Feature(name="event_type", type="string"),
             Feature(name="event_value", type="double"), # e.g. 0 or 1 for click, price for purchase
             Feature(name="event_weight", type="double"), # event_value multiplier
-            Feature(name="longtitude", type="bigint"), # TODO does it make sense to normalise session into separate fg?
-            Feature(name="latitude", type="bigint"),
+            Feature(name="longitude", type="double"), # TODO does it make sense to normalise session into separate fg?
+            Feature(name="latitude", type="double"),
             Feature(name="language", type="string"),
             Feature(name="useragent", type="string"),
         ]
@@ -476,7 +476,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             "decision-engine",
             "retrain_job.py",
         )
-        py_config["defaultArgs"] = f"-project_name {self._name}"
+        py_config["defaultArgs"] = f"-name {self._name}"
         job = self._jobs_api.create_job(
             self._prefix + "retrain_job", py_config
         )
@@ -490,6 +490,7 @@ class RecommendationDecisionEngine(DecisionEngine):
             "decision-engine",
             "events_consume_job.py",
         )
+        spark_config["defaultArgs"] = f"-name {self._name}"
         job = self._jobs_api.create_job(
             self._prefix + "events_consume_job", spark_config
         )
