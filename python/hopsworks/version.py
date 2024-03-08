@@ -14,8 +14,4 @@
 #   limitations under the License.
 #
 
-<<<<<<< HEAD
-__version__ = "3.8.0.dev1"
-=======
 __version__ = "3.7.0rc1"
->>>>>>> logicalclocks/branch-3.7
