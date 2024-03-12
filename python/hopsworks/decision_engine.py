@@ -296,12 +296,39 @@ class RecommendationDecisionEngine(DecisionEngine):
         self._query_model = SequenceEmbedding(
             pk_index_list, retrieval_config["item_space_dim"]
         )
-        tf.saved_model.save(self._query_model, "query_model")
+        query_model_module = QueryModelModule(self._query_model)
+        # Define the input specifications for the instances
+        instances_spec = {
+            'context_item_ids': tf.TensorSpec(shape=(None,), dtype=tf.string, name='context_item_ids'),
+        }
+
+        # Get the concrete function for the query_model's compute_emb function using the specified input signatures
+        signatures = query_model_module.compute_emb.get_concrete_function(instances_spec)
+
+        # Save the query_model along with the concrete function signatures
+        tf.saved_model.save(
+            query_model_module,    # The model to save
+            "query_model",         # Path to save the model
+            signatures=signatures, # Concrete function signatures to include
+        )
+
+        query_model_schema = ModelSchema(
+            input_schema=Schema(self._catalog_df.head()[self._configs_dict["product_list"]["primary_key"]]),
+            output_schema=Schema(
+            [
+                {
+                    "name": "embedding",
+                    "type": "double",
+                    "shape": [retrieval_config["item_space_dim"]],
+                }
+            ]
+        ),
+        )
 
         query_model = self._mr.tensorflow.create_model(
             name=self._prefix + "query_model",
             description="Model that generates embeddings from session interaction sequence",
-            # TODO add input/output examples
+            model_schema=query_model_schema,
         )
         query_model.save("query_model")
 
@@ -551,8 +578,8 @@ class ItemCatalogEmbedding(tf.keras.Model):
                         tf.keras.layers.GlobalAveragePooling1D(),
                     ]
                 )
-            elif val["transformation"] in ["numeric", "timestamp"]:
-                self.normalized_feats[feat] = tf.keras.layers.Normalization(axis=None)
+            elif val["transformation"] in ["numeric", "timestamp"]: # TODO change feature engineering for timestamps cause this is fucked
+                self.normalized_feats[feat] = tf.keras.layers.Normalization(axis=None) 
 
         self.fnn = tf.keras.Sequential(
             [
@@ -595,25 +622,39 @@ class ItemCatalogEmbedding(tf.keras.Model):
 
 
 class SequenceEmbedding(tf.keras.Model):
-    """
-    Query embedding tower of the Retrieval model
-    """
-
     def __init__(self, pk_index_list, item_space_dim):
-        super(SequenceEmbedding, self).__init__()
+        super().__init__()
         self.string_lookup = tf.keras.layers.StringLookup(
             vocabulary=pk_index_list, mask_token=None
         )
         self.embedding = tf.keras.layers.Embedding(
             len(pk_index_list) + 1, item_space_dim
         )
-        self.gru = tf.keras.layers.GRU(item_space_dim)
+        self.gru = tf.keras.layers.GRU(item_space_dim, return_sequences=False)
 
     def call(self, inputs):
         x = self.string_lookup(inputs)
         x = self.embedding(x)
+        # Reshape x to add a timesteps dimension if it's not inherently present
+        # This assumes that the sequence length is 1 for each input
+        if len(x.shape) == 2:
+            x = tf.expand_dims(x, axis=1)
         x = self.gru(x)
         return x
+
+
+class QueryModelModule(tf.Module):
+    def __init__(self, query_model):
+        self.query_model = query_model
+
+    @tf.function()
+    def compute_emb(self, instances):
+        # Compute the query embeddings
+        query_emb = self.query_model(instances["context_item_ids"])
+        # Ensure the output is a dictionary of tensors
+        return {
+            "query_emb": query_emb,
+        }
 
 
 class SessionModel(tf.keras.Model):
