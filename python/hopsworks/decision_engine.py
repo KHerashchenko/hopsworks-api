@@ -337,7 +337,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         # Define the input specifications for the instances
         instances_spec = {
             'query_emb': tf.TensorSpec(shape=(None,), dtype=tf.string, name='query_emb'),
-            'longtitude': tf.TensorSpec(shape=(None,), dtype=tf.float64, name='longtitude'), 
+            'longitude': tf.TensorSpec(shape=(None,), dtype=tf.float64, name='longitude'), 
             'latitude': tf.TensorSpec(shape=(None,), dtype=tf.float64, name='latitude'),   
             'language': tf.TensorSpec(shape=(None,), dtype=tf.string, name='language'),
             'useragent': tf.TensorSpec(shape=(None,), dtype=tf.string, name='useragent'),
@@ -678,7 +678,7 @@ class SessionModel(tf.keras.Model):
         self._candidate_model = candidate_model
 
         self.latitude = tf.keras.layers.Normalization(axis=None)
-        self.longtitude = tf.keras.layers.Normalization(axis=None)
+        self.longitude = tf.keras.layers.Normalization(axis=None)
 
         language_codes = ['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv'] # TODO provide full list
         self.language = tf.keras.layers.StringLookup(
@@ -699,7 +699,7 @@ class SessionModel(tf.keras.Model):
         )
 
         self._available_feature_transformations = {
-            "longtitude": self.longtitude,
+            "longitude": self.longitude,
             "latitude": self.latitude,
             "language": self.language,
             "useragent": self.useragent,
