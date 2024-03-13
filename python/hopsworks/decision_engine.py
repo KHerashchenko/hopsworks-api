@@ -633,7 +633,8 @@ class ItemCatalogEmbedding(tf.keras.Model):
                     )
                 )
             elif val["transformation"] == "text":
-                layers.append(self.texts_embeddings[feat](text_inputs[feat]))
+                
+                layers.append(self.texts_embeddings[feat](tf.expand_dims(text_inputs[feat], 0)))
             elif val["transformation"] in ["numeric", "timestamp"]:
                 layers.append(
                     tf.reshape(
