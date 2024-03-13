@@ -277,10 +277,10 @@ class RecommendationDecisionEngine(DecisionEngine):
                 self._candidate_model.normalized_feats[feat].adapt(
                     self._catalog_df[feat].tolist()
                 )
-            elif val["transformation"] == "text":
-                self._candidate_model.texts_embeddings[feat].layers[0].adapt(
-                    self._catalog_df[feat].tolist()
-                )
+            # elif val["transformation"] == "text":
+            #     self._candidate_model.texts_embeddings[feat].layers[0].adapt(
+            #         self._catalog_df[feat].tolist()
+            #     )
 
         tf.saved_model.save(self._candidate_model, "candidate_model")
 
