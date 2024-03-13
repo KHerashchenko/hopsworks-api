@@ -334,17 +334,7 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         # Creating ranking model
         self._ranking_model = RankingModel(self._candidate_model) # TODO add adapt() for features in a retrain job
-        # Define the input specifications for the instances
-        instances_spec = {
-            'query_emb': tf.TensorSpec(shape=(None,), dtype=tf.string, name='query_emb'),
-            'longitude': tf.TensorSpec(shape=(None,), dtype=tf.float64, name='longitude'), 
-            'latitude': tf.TensorSpec(shape=(None,), dtype=tf.float64, name='latitude'),   
-            'language': tf.TensorSpec(shape=(None,), dtype=tf.string, name='language'),
-            'useragent': tf.TensorSpec(shape=(None,), dtype=tf.string, name='useragent'),
-        }
-        # Get the concrete function for the query_model's compute_emb function using the specified input signatures
-        signatures = self._ranking_model.compute_rating.get_concrete_function(instances_spec)
-        tf.saved_model.save(self._ranking_model, "ranking_model", signatures=signatures,)
+        tf.saved_model.save(self._ranking_model, "ranking_model")
         
         ranking_model = self._mr.tensorflow.create_model(
             name=self._prefix + "ranking_model",
@@ -751,13 +741,6 @@ class RankingModel(tfrs.models.Model):
 
     def call(self, inputs):
         return self._session_model(inputs)
-    
-    @tf.function()
-    def compute_rating(self, instances):
-        ratings = self._session_model(instances)
-        return {
-            "ratings": ratings,
-        }
 
     def compute_loss(self, inputs, training=False):
         labels = inputs.pop("score")
