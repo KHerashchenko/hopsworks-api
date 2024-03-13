@@ -583,24 +583,24 @@ class ItemCatalogEmbedding(tf.keras.Model):
             self.categories_lens[feat] = len(lst)
 
         vocab_size = 1000
-        self.texts_embeddings = {}
+        # self.texts_embeddings = {}
         self.normalized_feats = {}
         for feat, val in self._configs_dict["product_list"]["schema"].items():
             if "transformation" not in val.keys():
                 continue
-            if val["transformation"] == "text":
-                self.texts_embeddings[feat] = tf.keras.Sequential(
-                    [
-                        tf.keras.layers.TextVectorization(
-                            max_tokens=vocab_size,
-                        ),
-                        tf.keras.layers.Embedding(
-                            vocab_size + 1, item_space_dim, mask_zero=True
-                        ),
-                        tf.keras.layers.GlobalAveragePooling1D(),
-                    ]
-                )
-            elif val["transformation"] in [
+            # if val["transformation"] == "text":
+            #     self.texts_embeddings[feat] = tf.keras.Sequential(
+            #         [
+            #             tf.keras.layers.TextVectorization(
+            #                 max_tokens=vocab_size,
+            #             ),
+            #             tf.keras.layers.Embedding(
+            #                 vocab_size + 1, item_space_dim, mask_zero=True
+            #             ),
+            #             tf.keras.layers.GlobalAveragePooling1D(),
+            #         ]
+            #     )
+            if val["transformation"] in [
                 "numeric",
                 "timestamp",
             ]:  # TODO change feature engineering for timestamps cause this is fucked
@@ -617,7 +617,7 @@ class ItemCatalogEmbedding(tf.keras.Model):
         # Explicitly name input tensors
         pk_inputs = inputs[self._configs_dict["product_list"]["primary_key"]]
         category_inputs = {feat: inputs[feat] for feat in self.categories_tokenizers}
-        text_inputs = {feat: inputs[feat] for feat in self.texts_embeddings}
+        # text_inputs = {feat: inputs[feat] for feat in self.texts_embeddings} # TODO couldnt solve errors with Pooling layer
         numeric_inputs = {feat: inputs[feat] for feat in self.normalized_feats}
 
         layers = [self.pk_embedding(pk_inputs)]
@@ -632,9 +632,8 @@ class ItemCatalogEmbedding(tf.keras.Model):
                         self.categories_lens[feat],
                     )
                 )
-            elif val["transformation"] == "text":
-                
-                layers.append(self.texts_embeddings[feat](tf.expand_dims(text_inputs[feat], 0)))
+            # elif val["transformation"] == "text":
+            #     layers.append(self.texts_embeddings[feat](tf.expand_dims(text_inputs[feat], 0)))
             elif val["transformation"] in ["numeric", "timestamp"]:
                 layers.append(
                     tf.reshape(
