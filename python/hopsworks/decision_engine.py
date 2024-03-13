@@ -712,17 +712,17 @@ class SessionModel(tf.keras.Model):
         )
         self.language_len = len(language_codes)
 
-        vocab_size = 100
-        text_embed_size = 16
-        self.useragent = tf.keras.Sequential(
-            [
-                tf.keras.layers.TextVectorization(
-                    max_tokens=vocab_size,
-                ),
-                tf.keras.layers.Embedding(vocab_size, text_embed_size, mask_zero=True),
-                tf.keras.layers.GlobalAveragePooling1D(),
-            ]
-        )
+        # vocab_size = 100
+        # text_embed_size = 16
+        # self.useragent = tf.keras.Sequential(
+        #     [
+        #         tf.keras.layers.TextVectorization(
+        #             max_tokens=vocab_size,
+        #         ),
+        #         tf.keras.layers.Embedding(vocab_size, text_embed_size, mask_zero=True),
+        #         tf.keras.layers.GlobalAveragePooling1D(),
+        #     ]
+        # )
 
         self._available_feature_transformations = {
             "longitude": self.longitude,
