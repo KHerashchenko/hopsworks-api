@@ -313,28 +313,25 @@ class RecommendationDecisionEngine(DecisionEngine):
             tf.keras.layers.GRU(retrieval_config["item_space_dim"]),
         ])
         
-        # self._query_model = SequenceEmbedding(
-        #     pk_index_list, retrieval_config["item_space_dim"]
-        # )
-        # query_model_module = QueryModelModule(self._query_model)
-        # # Define the input specifications for the instances
-        # instances_spec = {
-        #     "context_item_ids": tf.TensorSpec(
-        #         shape=(None,), dtype=tf.string, name="context_item_ids"
-        #     ),
-        # }
+        query_model_module = QueryModelModule(self._query_model)
+        # Define the input specifications for the instances
+        instances_spec = {
+            "context_item_ids": tf.TensorSpec(
+                shape=(None,), dtype=tf.string, name="context_item_ids"
+            ),
+        }
 
-        # # Get the concrete function for the query_model's compute_emb function using the specified input signatures
-        # signatures = query_model_module.compute_emb.get_concrete_function(
-        #     instances_spec
-        # )
+        # Get the concrete function for the query_model's compute_emb function using the specified input signatures
+        signatures = query_model_module.compute_emb.get_concrete_function(
+            instances_spec
+        )
 
-        # # Save the query_model along with the concrete function signatures
-        # tf.saved_model.save(
-        #     query_model_module,  # The model to save
-        #     "query_model",  # Path to save the model
-        #     signatures=signatures,  # Concrete function signatures to include
-        # )
+        # Save the query_model along with the concrete function signatures
+        tf.saved_model.save(
+            query_model_module,  # The model to save
+            "query_model",  # Path to save the model
+            signatures=signatures,  # Concrete function signatures to include
+        )
         
         tf.saved_model.save(self._query_model, "query_model")
 
@@ -659,18 +656,18 @@ class ItemCatalogEmbedding(tf.keras.Model):
         return outputs
 
 
-# class QueryModelModule(tf.Module):
-#     def __init__(self, query_model):
-#         self.query_model = query_model
+class QueryModelModule(tf.Module):
+    def __init__(self, query_model):
+        self.query_model = query_model
 
-#     @tf.function()
-#     def compute_emb(self, instances):
-#         # Compute the query embeddings
-#         query_emb = self.query_model(instances["context_item_ids"])
-#         # Ensure the output is a dictionary of tensors
-#         return {
-#             "query_emb": query_emb,
-#         }
+    @tf.function()
+    def compute_emb(self, instances):
+        # Compute the query embeddings
+        query_emb = self.query_model(instances["context_item_ids"])
+        # Ensure the output is a dictionary of tensors
+        return {
+            "query_emb": query_emb,
+        }
 
 
 class SessionModel(tf.keras.Model):
@@ -781,18 +778,18 @@ class RankingModel(tfrs.models.Model):
         input_signature=[
             {
                 "item_features": {
-                    "article_id": tf.TensorSpec(shape=(), dtype=tf.string),
-                    "detail_desc": tf.TensorSpec(shape=(), dtype=tf.string),
-                    "price": tf.TensorSpec(shape=(), dtype=tf.float32),
-                    "prod_name": tf.TensorSpec(shape=(), dtype=tf.string),
-                    "product_type_name": tf.TensorSpec(shape=(), dtype=tf.string),
-                    "t_dat": tf.TensorSpec(shape=(), dtype=tf.int64),
+                    "article_id": tf.TensorSpec(shape=(None,), dtype=tf.string),
+                    "detail_desc": tf.TensorSpec(shape=(None,), dtype=tf.string),
+                    "price": tf.TensorSpec(shape=(None,), dtype=tf.float32),
+                    "prod_name": tf.TensorSpec(shape=(None,), dtype=tf.string),
+                    "product_type_name": tf.TensorSpec(shape=(None,), dtype=tf.string),
+                    "t_dat": tf.TensorSpec(shape=(None,), dtype=tf.int64),
                 },
                 "session_features": {
-                    "longitude": tf.TensorSpec(shape=(), dtype=tf.float32),
-                    "latitude": tf.TensorSpec(shape=(), dtype=tf.float32),
-                    "language": tf.TensorSpec(shape=(), dtype=tf.string),
-                    "useragent": tf.TensorSpec(shape=(), dtype=tf.string),
+                    "longitude": tf.TensorSpec(shape=(None,), dtype=tf.float32),
+                    "latitude": tf.TensorSpec(shape=(None,), dtype=tf.float32),
+                    "language": tf.TensorSpec(shape=(None,), dtype=tf.string),
+                    "useragent": tf.TensorSpec(shape=(None,), dtype=tf.string),
                 },
             }
         ]
