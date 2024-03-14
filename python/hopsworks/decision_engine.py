@@ -317,7 +317,7 @@ class RecommendationDecisionEngine(DecisionEngine):
         # Define the input specifications for the instances
         instances_spec = {
             "context_item_ids": tf.TensorSpec(
-                shape=(None,), dtype=tf.string, name="context_item_ids"
+                shape=(None,None), dtype=tf.string, name="context_item_ids"
             ),
         }
 
@@ -332,8 +332,6 @@ class RecommendationDecisionEngine(DecisionEngine):
             "query_model",  # Path to save the model
             signatures=signatures,  # Concrete function signatures to include
         )
-        
-        tf.saved_model.save(self._query_model, "query_model")
 
         query_model_schema = ModelSchema(
             input_schema=Schema(
@@ -663,7 +661,7 @@ class QueryModelModule(tf.Module):
     @tf.function()
     def compute_emb(self, instances):
         # Compute the query embeddings
-        query_emb = self.query_model(instances["context_item_ids"])
+        query_emb = self.query_model(tf.expand_dims(instances["context_item_ids"], axis=-1))
         # Ensure the output is a dictionary of tensors
         return {
             "query_emb": query_emb,
