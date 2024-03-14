@@ -276,10 +276,10 @@ class RecommendationDecisionEngine(DecisionEngine):
                 self._candidate_model.normalized_feats[feat].adapt(
                     self._catalog_df[feat].tolist()
                 )
-            elif val["transformation"] == "text":
-                self._candidate_model.texts_embeddings[feat].layers[0].adapt(
-                    self._catalog_df[feat].tolist()
-                )
+            # elif val["transformation"] == "text":
+            #     self._candidate_model.texts_embeddings[feat].layers[0].adapt(
+            #         self._catalog_df[feat].tolist()
+            #     )
 
         tf.saved_model.save(self._candidate_model, "candidate_model")
 
@@ -614,7 +614,7 @@ class ItemCatalogEmbedding(tf.keras.Model):
             self.categories_lens[feat] = len(lst)
 
         vocab_size = 1000
-        self.texts_embeddings = {}
+        # self.texts_embeddings = {}
         self.normalized_feats = {}
         for feat, val in self._configs_dict["product_list"]["schema"].items():
             if "transformation" not in val.keys():
