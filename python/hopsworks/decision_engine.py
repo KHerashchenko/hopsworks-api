@@ -306,28 +306,37 @@ class RecommendationDecisionEngine(DecisionEngine):
         )
         candidate_model.save("candidate_model")
 
-        self._query_model = SequenceEmbedding(
-            pk_index_list, retrieval_config["item_space_dim"]
-        )
-        query_model_module = QueryModelModule(self._query_model)
-        # Define the input specifications for the instances
-        instances_spec = {
-            "context_item_ids": tf.TensorSpec(
-                shape=(None,), dtype=tf.string, name="context_item_ids"
-            ),
-        }
+        self._query_model = tf.keras.Sequential([
+            tf.keras.layers.StringLookup(
+            vocabulary=pk_index_list, mask_token=None),
+            tf.keras.layers.Embedding(len(pk_index_list) + 1, retrieval_config["item_space_dim"]), 
+            tf.keras.layers.GRU(retrieval_config["item_space_dim"]),
+        ])
+        
+        # self._query_model = SequenceEmbedding(
+        #     pk_index_list, retrieval_config["item_space_dim"]
+        # )
+        # query_model_module = QueryModelModule(self._query_model)
+        # # Define the input specifications for the instances
+        # instances_spec = {
+        #     "context_item_ids": tf.TensorSpec(
+        #         shape=(None,), dtype=tf.string, name="context_item_ids"
+        #     ),
+        # }
 
-        # Get the concrete function for the query_model's compute_emb function using the specified input signatures
-        signatures = query_model_module.compute_emb.get_concrete_function(
-            instances_spec
-        )
+        # # Get the concrete function for the query_model's compute_emb function using the specified input signatures
+        # signatures = query_model_module.compute_emb.get_concrete_function(
+        #     instances_spec
+        # )
 
-        # Save the query_model along with the concrete function signatures
-        tf.saved_model.save(
-            query_model_module,  # The model to save
-            "query_model",  # Path to save the model
-            signatures=signatures,  # Concrete function signatures to include
-        )
+        # # Save the query_model along with the concrete function signatures
+        # tf.saved_model.save(
+        #     query_model_module,  # The model to save
+        #     "query_model",  # Path to save the model
+        #     signatures=signatures,  # Concrete function signatures to include
+        # )
+        
+        tf.saved_model.save(self._query_model, "query_model")
 
         query_model_schema = ModelSchema(
             input_schema=Schema(
@@ -542,8 +551,6 @@ class RecommendationDecisionEngine(DecisionEngine):
             self._prefix + "events_consume_job", spark_config
         )
 
-        # TODO create a job for retraining models if product list is updated
-
 
 class ItemCatalogEmbedding(tf.keras.Model):
     """
@@ -652,37 +659,18 @@ class ItemCatalogEmbedding(tf.keras.Model):
         return outputs
 
 
-class SequenceEmbedding(tf.keras.Model):
-    def __init__(self, pk_index_list, item_space_dim):
-        super().__init__()
-        self.string_lookup = tf.keras.layers.StringLookup(
-            vocabulary=pk_index_list, mask_token=None
-        )
-        self.embedding = tf.keras.layers.Embedding(
-            len(pk_index_list) + 1, item_space_dim
-        )
-        self.gru = tf.keras.layers.GRU(item_space_dim, return_sequences=False)
+# class QueryModelModule(tf.Module):
+#     def __init__(self, query_model):
+#         self.query_model = query_model
 
-    def call(self, inputs):
-        x = self.string_lookup(inputs)
-        x = self.embedding(x)
-        x = tf.expand_dims(x, axis=1)
-        x = self.gru(x)
-        return x
-
-
-class QueryModelModule(tf.Module):
-    def __init__(self, query_model):
-        self.query_model = query_model
-
-    @tf.function()
-    def compute_emb(self, instances):
-        # Compute the query embeddings
-        query_emb = self.query_model(instances["context_item_ids"])
-        # Ensure the output is a dictionary of tensors
-        return {
-            "query_emb": query_emb,
-        }
+#     @tf.function()
+#     def compute_emb(self, instances):
+#         # Compute the query embeddings
+#         query_emb = self.query_model(instances["context_item_ids"])
+#         # Ensure the output is a dictionary of tensors
+#         return {
+#             "query_emb": query_emb,
+#         }
 
 
 class SessionModel(tf.keras.Model):
