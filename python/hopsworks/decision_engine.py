@@ -661,7 +661,7 @@ class QueryModelModule(tf.Module):
     @tf.function()
     def compute_emb(self, instances):
         # Compute the query embeddings
-        query_emb = self.query_model(tf.expand_dims(instances["context_item_ids"], axis=-1))
+        query_emb = self.query_model(instances["context_item_ids"])
         # Ensure the output is a dictionary of tensors
         return {
             "query_emb": query_emb,
