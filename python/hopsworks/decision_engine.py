@@ -1,7 +1,6 @@
 import logging
 import pickle
 from abc import ABC, abstractmethod
-from datetime import datetime
 from typing import List, Dict
 from dataclasses import dataclass
 
@@ -277,10 +276,10 @@ class RecommendationDecisionEngine(DecisionEngine):
                 self._candidate_model.normalized_feats[feat].adapt(
                     self._catalog_df[feat].tolist()
                 )
-            # elif val["transformation"] == "text":
-            #     self._candidate_model.texts_embeddings[feat].layers[0].adapt(
-            #         self._catalog_df[feat].tolist()
-            #     )
+            elif val["transformation"] == "text":
+                self._candidate_model.texts_embeddings[feat].layers[0].adapt(
+                    self._catalog_df[feat].tolist()
+                )
 
         tf.saved_model.save(self._candidate_model, "candidate_model")
 
@@ -306,18 +305,21 @@ class RecommendationDecisionEngine(DecisionEngine):
         )
         candidate_model.save("candidate_model")
 
-        self._query_model = tf.keras.Sequential([
-            tf.keras.layers.StringLookup(
-            vocabulary=pk_index_list, mask_token=None),
-            tf.keras.layers.Embedding(len(pk_index_list) + 1, retrieval_config["item_space_dim"]), 
-            tf.keras.layers.GRU(retrieval_config["item_space_dim"]),
-        ])
-        
+        self._query_model = tf.keras.Sequential(
+            [
+                tf.keras.layers.StringLookup(vocabulary=pk_index_list, mask_token=None),
+                tf.keras.layers.Embedding(
+                    len(pk_index_list) + 1, retrieval_config["item_space_dim"]
+                ),
+                tf.keras.layers.GRU(retrieval_config["item_space_dim"]),
+            ]
+        )
+
         query_model_module = QueryModelModule(self._query_model)
         # Define the input specifications for the instances
         instances_spec = {
             "context_item_ids": tf.TensorSpec(
-                shape=(None,None), dtype=tf.string, name="context_item_ids"
+                shape=(None, None), dtype=tf.string, name="context_item_ids"
             ),
         }
 
@@ -350,24 +352,51 @@ class RecommendationDecisionEngine(DecisionEngine):
             ),
         )
 
-        query_model = self._mr.tensorflow.create_model(
+        mr_query_model = self._mr.tensorflow.create_model(
             name=self._prefix + "query_model",
             description="Model that generates embeddings from session interaction sequence",
             model_schema=query_model_schema,
         )
-        query_model.save("query_model")
+        mr_query_model.save("query_model")
 
         # Creating ranking model
         self._ranking_model = RankingModel(
             self._candidate_model
         )  # TODO add adapt() for features in a retrain job
-        tf.saved_model.save(self._ranking_model, "ranking_model")
 
-        ranking_model = self._mr.tensorflow.create_model(
+        # TODO remove hardcode features from items df
+        instances_spec = {
+            "article_id": tf.TensorSpec(
+                shape=(None,), dtype=tf.string, name="article_id"
+            ),
+            "detail_desc": tf.TensorSpec(
+                shape=(None,), dtype=tf.string, name="detail_desc"
+            ),
+            "price": tf.TensorSpec(shape=(None,), dtype=tf.float32, name="price"),
+            "prod_name": tf.TensorSpec(
+                shape=(None,), dtype=tf.string, name="prod_name"
+            ),
+            "product_type_name": tf.TensorSpec(
+                shape=(None,), dtype=tf.string, name="product_type_name"
+            ),
+            "t_dat": tf.TensorSpec(shape=(None,), dtype=tf.int64, name="t_dat"),
+            "longitude": tf.TensorSpec(
+                shape=(None,), dtype=tf.float32, name="longitude"
+            ),
+            "latitude": tf.TensorSpec(shape=(None,), dtype=tf.float32, name="latitude"),
+            "language": tf.TensorSpec(shape=(None,), dtype=tf.string, name="language"),
+            "useragent": tf.TensorSpec(
+                shape=(None,), dtype=tf.string, name="useragent"
+            ),
+        }
+        signatures = self._ranking_model.serve.get_concrete_function(instances_spec)
+        tf.saved_model.save(self._ranking_model, "ranking_model", signatures=signatures)
+
+        mr_ranking_model = self._mr.tensorflow.create_model(
             name=self._prefix + "ranking_model",
             description="Ranking model that scores item candidates",
         )
-        ranking_model.save("ranking_model")
+        mr_ranking_model.save("ranking_model")
         # ranking_model.add_tag(name="decision_engine", value={"use_case": self._configs_dict['use_case'], "name": self._configs_dict['name']})
 
         # Creating Redirect model for events redirect to Kafka
@@ -585,23 +614,23 @@ class ItemCatalogEmbedding(tf.keras.Model):
             self.categories_lens[feat] = len(lst)
 
         vocab_size = 1000
-        # self.texts_embeddings = {}
+        self.texts_embeddings = {}
         self.normalized_feats = {}
         for feat, val in self._configs_dict["product_list"]["schema"].items():
             if "transformation" not in val.keys():
                 continue
-            # if val["transformation"] == "text":
-            #     self.texts_embeddings[feat] = tf.keras.Sequential(
-            #         [
-            #             tf.keras.layers.TextVectorization(
-            #                 max_tokens=vocab_size,
-            #             ),
-            #             tf.keras.layers.Embedding(
-            #                 vocab_size + 1, item_space_dim, mask_zero=True
-            #             ),
-            #             tf.keras.layers.GlobalAveragePooling1D(),
-            #         ]
-            #     )
+            if val["transformation"] == "text":
+                self.texts_embeddings[feat] = tf.keras.Sequential(
+                    [
+                        tf.keras.layers.TextVectorization(
+                            max_tokens=vocab_size,
+                        ),
+                        tf.keras.layers.Embedding(
+                            vocab_size + 1, item_space_dim, mask_zero=True
+                        ),
+                        tf.keras.layers.GlobalAveragePooling1D(),
+                    ]
+                )
             if val["transformation"] in [
                 "numeric",
                 "timestamp",
@@ -726,44 +755,43 @@ class SessionModel(tf.keras.Model):
         )
 
     def call(self, inputs):
-        item_features = inputs["item_features"]
-        session_features = inputs["session_features"]
+        session_features = {
+            key: inputs.pop(key)
+            for key in self._available_feature_transformations
+            if key in inputs
+        }
+        item_features = inputs
 
+        # Get candidate embedding
         candidate_embedding = self._candidate_model(item_features)
 
         session_embedding = []
-        for feature in session_features:
-            if feature in self._available_feature_transformations:
-                transformed_feature = self._available_feature_transformations[feature](
-                    session_features[feature]
-                )
-                # Check if the tensor is scalar (rank 0), and reshape to (1, 1) if so
-                if transformed_feature.shape.rank == 0:
-                    transformed_feature = tf.reshape(transformed_feature, [1, 1])
-                # Ensure the tensor is of type float32
-                transformed_feature = tf.cast(transformed_feature, tf.float32)
-                session_embedding.append(transformed_feature)
-
-        # Ensure all session_embedding tensors are 2D and compatible for concatenation
-        session_embedding = [
-            tf.expand_dims(e, 0) if e.shape.rank < 2 else e for e in session_embedding
+        for feature, transformation in self._available_feature_transformations.items():
+            if feature in session_features:
+                transformed_feature = transformation(session_features[feature])
+            else:
+                transformed_feature = tf.zeros(shape=(0,), dtype=tf.float32)
+            session_embedding.append(tf.cast(transformed_feature, tf.float32))
+        # Step 1: Ensure 2D shapes for session_embedding tensors
+        session_embedding_2d = [
+            tf.expand_dims(tensor, -1) for tensor in session_embedding
         ]
 
-        # Flatten or reshape the tensor with shape [1,1,16] to make it [1,16] to match ranks
-        session_embedding_adjusted = []
-        for tensor in session_embedding:
-            if tensor.shape.rank == 3:  # This finds the 3D tensor
-                # Flatten or reshape it; here we simply remove the middle dimension assuming it's size 1
-                tensor = tf.reshape(tensor, [1, -1])
-            session_embedding_adjusted.append(tensor)
+        # Step 2: Concatenate session_embedding tensors along the feature axis
+        concatenated_session_embedding = tf.concat(session_embedding_2d, axis=-1)
 
-        # Now concatenate, ensuring all tensors are 2D
-        concatenated_features = tf.concat(
-            session_embedding_adjusted + [tf.reshape(candidate_embedding, [1, -1])],
-            axis=-1,
+        # Assuming concatenated_session_embedding is now of shape (None, M) and candidate_embedding is of shape (None, 16),
+        # where M is the total number of session features after concatenation.
+
+        # Step 3: Concatenate concatenated_session_embedding with candidate_embedding
+        final_input = tf.concat(
+            [concatenated_session_embedding, candidate_embedding], axis=-1
         )
 
-        return {'score': self.ratings(concatenated_features)}
+        # final_input should now be of shape (None, M+16), ready to be passed to your Sequential model.
+        ratings_output = self.ratings(final_input)
+
+        return {"score": ratings_output}
 
 
 class RankingModel(tfrs.models.Model):
@@ -772,26 +800,7 @@ class RankingModel(tfrs.models.Model):
     """
 
     # TODO hardcode because I dont know how to provide fucking signatures otherwise
-    @tf.function(
-        input_signature=[
-            {
-                "item_features": {
-                    "article_id": tf.TensorSpec(shape=(None,), dtype=tf.string),
-                    "detail_desc": tf.TensorSpec(shape=(None,), dtype=tf.string),
-                    "price": tf.TensorSpec(shape=(None,), dtype=tf.float32),
-                    "prod_name": tf.TensorSpec(shape=(None,), dtype=tf.string),
-                    "product_type_name": tf.TensorSpec(shape=(None,), dtype=tf.string),
-                    "t_dat": tf.TensorSpec(shape=(None,), dtype=tf.int64),
-                },
-                "session_features": {
-                    "longitude": tf.TensorSpec(shape=(None,), dtype=tf.float32),
-                    "latitude": tf.TensorSpec(shape=(None,), dtype=tf.float32),
-                    "language": tf.TensorSpec(shape=(None,), dtype=tf.string),
-                    "useragent": tf.TensorSpec(shape=(None,), dtype=tf.string),
-                },
-            }
-        ]
-    )
+    @tf.function()
     def serve(self, features):
         return self.call(features)
 
