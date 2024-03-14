@@ -754,6 +754,7 @@ class SessionModel(tf.keras.Model):
         )
 
     def call(self, inputs):
+        print("Model received  input: ", inputs)
         session_features = {
             key: inputs.pop(key)
             for key in self._available_feature_transformations
@@ -783,6 +784,8 @@ class SessionModel(tf.keras.Model):
         # where M is the total number of session features after concatenation.
 
         # Step 3: Concatenate concatenated_session_embedding with candidate_embedding
+        print("Before final concat concatenated_session_embedding: ", concatenated_session_embedding)
+        print("Before final concat candidate_embedding: ", candidate_embedding)
         final_input = tf.concat(
             [concatenated_session_embedding, candidate_embedding], axis=-1
         )
