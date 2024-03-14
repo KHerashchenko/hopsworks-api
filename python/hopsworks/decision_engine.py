@@ -619,18 +619,18 @@ class ItemCatalogEmbedding(tf.keras.Model):
         for feat, val in self._configs_dict["product_list"]["schema"].items():
             if "transformation" not in val.keys():
                 continue
-            if val["transformation"] == "text":
-                self.texts_embeddings[feat] = tf.keras.Sequential(
-                    [
-                        tf.keras.layers.TextVectorization(
-                            max_tokens=vocab_size,
-                        ),
-                        tf.keras.layers.Embedding(
-                            vocab_size + 1, item_space_dim, mask_zero=True
-                        ),
-                        tf.keras.layers.GlobalAveragePooling1D(),
-                    ]
-                )
+            # if val["transformation"] == "text":
+            #     self.texts_embeddings[feat] = tf.keras.Sequential(
+            #         [
+            #             tf.keras.layers.TextVectorization(
+            #                 max_tokens=vocab_size,
+            #             ),
+            #             tf.keras.layers.Embedding(
+            #                 vocab_size + 1, item_space_dim, mask_zero=True
+            #             ),
+            #             tf.keras.layers.GlobalAveragePooling1D(),
+            #         ]
+            #     )
             if val["transformation"] in [
                 "numeric",
                 "timestamp",
@@ -676,7 +676,6 @@ class ItemCatalogEmbedding(tf.keras.Model):
             tf.expand_dims(tensor, axis=0) if tensor.shape.rank == 1 else tensor
             for tensor in layers
         ]
-        print(layers)
         concatenated_inputs = tf.concat(layers, axis=1)
         outputs = self.fnn(concatenated_inputs)
 
