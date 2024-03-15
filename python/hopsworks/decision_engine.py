@@ -687,7 +687,7 @@ class ItemCatalogEmbedding(tf.keras.Model):
                 )
                 layers.append(tensor)
 
-        print("Layers are: ", layers)               
+        print("Layers are:", layers)               
         # concatenated_inputs = tf.concat(adjusted_layers, axis=-1) # TODO cant fix dimensions
         outputs = self.fnn(layers[0])
         return outputs
@@ -715,7 +715,6 @@ class RankingModel(tf.keras.Model):
     def __init__(
         self,
         configs_dict: dict,
-        pk_index_list: List[str],
         categories_lists: Dict[str, List[str]],
     ):
         super().__init__()
@@ -723,66 +722,22 @@ class RankingModel(tf.keras.Model):
         self.latitude = tf.keras.layers.Normalization(axis=None)
         self.longitude = tf.keras.layers.Normalization(axis=None)
 
-        language_codes = [
-            "en",
-            "es",
-            "fr",
-            "de",
-            "it",
-            "pt",
-            "nl",
-            "sv",
-        ]  # TODO provide full list
-        self.language = tf.keras.layers.StringLookup(
-            vocabulary=language_codes, mask_token=None
-        )
-        self.language_len = len(language_codes)
-
-        # vocab_size = 100
-        # text_embed_size = 16
-        # self.useragent = tf.keras.Sequential(
-        #     [
-        #         tf.keras.layers.TextVectorization(
-        #             max_tokens=vocab_size,
-        #         ),
-        #         tf.keras.layers.Embedding(vocab_size, text_embed_size, mask_zero=True),
-        #         tf.keras.layers.GlobalAveragePooling1D(),
-        #     ]
+        # language_codes = [
+        #     "en",
+        #     "es",
+        #     "fr",
+        #     "de",
+        #     "it",
+        #     "pt",
+        #     "nl",
+        #     "sv",
+        # ]  # TODO provide full list
+        # self.language = tf.keras.layers.StringLookup(
+        #     vocabulary=language_codes, mask_token=None
         # )
-
-        self._available_feature_transformations = {
-            "longitude": self.longitude,
-            "latitude": self.latitude,
-            "language": self.language,
-            #             "useragent": self.useragent,
-        }
-
-        # Compute predictions.
-        self.ratings = tf.keras.Sequential(
-            [
-                # Learn multiple dense layers.
-                tf.keras.layers.Dense(256, activation="relu"),
-                tf.keras.layers.Dense(64, activation="relu"),
-                # Make rating predictions in the final layer.
-                tf.keras.layers.Dense(1),
-            ]
-        )
+        # self.language_len = len(language_codes)
 
         self._configs_dict = configs_dict
-        item_space_dim = self._configs_dict["model_configuration"]["retrieval_model"][
-            "item_space_dim"
-        ]
-
-        self.pk_embedding = tf.keras.Sequential(
-            [
-                tf.keras.layers.StringLookup(vocabulary=pk_index_list, mask_token=None),
-                tf.keras.layers.Embedding(
-                    # We add an additional embedding to account for unknown tokens.
-                    len(pk_index_list) + 1,
-                    item_space_dim,
-                ),
-            ]
-        )
 
         self.categories_tokenizers = {}
         self.categories_lens = {}
@@ -792,117 +747,64 @@ class RankingModel(tf.keras.Model):
             )
             self.categories_lens[feat] = len(lst)
 
-        vocab_size = 1000
-        # self.texts_embeddings = {}
         self.normalized_feats = {}
         for feat, val in self._configs_dict["product_list"]["schema"].items():
             if "transformation" not in val.keys():
                 continue
-            # if val["transformation"] == "text":
-            #     self.texts_embeddings[feat] = tf.keras.Sequential(
-            #         [
-            #             tf.keras.layers.TextVectorization(
-            #                 max_tokens=vocab_size,
-            #             ),
-            #             tf.keras.layers.Embedding(
-            #                 vocab_size + 1, item_space_dim, mask_zero=True
-            #             ),
-            #             tf.keras.layers.GlobalAveragePooling1D(),
-            #         ]
-            #     )
             if val["transformation"] in [
                 "numeric",
                 "timestamp",
             ]:  # TODO change feature engineering for timestamps cause this is fucked
                 self.normalized_feats[feat] = tf.keras.layers.Normalization(axis=None)
-
-        self.fnn = tf.keras.Sequential(
+        
+        self.ratings = tf.keras.Sequential(
             [
-                tf.keras.layers.Dense(item_space_dim, activation="relu"),
-                tf.keras.layers.Dense(item_space_dim),
+                # Learn multiple dense layers.
+                tf.keras.layers.Dense(256, activation="relu"),
+                tf.keras.layers.Dense(64, activation="relu"),
+                # Make rating predictions in the final layer.
+                tf.keras.layers.Dense(1),
             ]
         )
-
+        
     def compute_candidate_embedding(self, inputs):
-        pk_inputs = inputs[self._configs_dict["product_list"]["primary_key"]]
-        category_inputs = {feat: inputs[feat] for feat in self.categories_tokenizers}
-        # text_inputs = {feat: inputs[feat] for feat in self.texts_embeddings} # TODO couldnt solve errors with Pooling layer
+        # category_inputs = {feat: inputs[feat] for feat in self.categories_tokenizers}
         numeric_inputs = {feat: inputs[feat] for feat in self.normalized_feats}
 
-        layers = [self.pk_embedding(pk_inputs)]
+        layers = []
 
         for feat, val in self._configs_dict["product_list"]["schema"].items():
             if "transformation" not in val.keys():
                 continue
-            if val["transformation"] == "category":
-                layers.append(
-                    tf.one_hot(
-                        self.categories_tokenizers[feat](category_inputs[feat]),
-                        self.categories_lens[feat],
-                    )
-                )
-            # elif val["transformation"] == "text":
-            #     layers.append(self.texts_embeddings[feat](tf.expand_dims(text_inputs[feat], 0)))
-            elif val["transformation"] in ["numeric", "timestamp"]:
+            if val["transformation"] in ["numeric", "timestamp"]:
                 tensor = tf.reshape(
                     self.normalized_feats[feat](numeric_inputs[feat]), (-1, 1)
                 )
                 layers.append(tensor)
+            # if val["transformation"] == "category":
+            #     tensor = tf.one_hot(
+            #         self.categories_tokenizers[feat](category_inputs[feat]),
+            #         depth=self.categories_lens[feat]
+            #     )
+            #     layers.append(tensor)
 
-        adjusted_layers = []
-        for l in layers:
-            if len(l.shape.as_list()) == 3:  # Check if the tensor has exactly 3 dimensions
-                # Squeeze the tensor to remove the singleton dimension
-                squeezed_tensor = tf.squeeze(l, axis=0)  # Assumes the singleton dimension is the first
-                adjusted_layers.append(squeezed_tensor)
-            else:
-                # If not 3-dimensional, add the tensor to the list without modification
-                adjusted_layers.append(l)  
-                      
-        # concatenated_inputs = tf.concat(adjusted_layers, axis=-1) # TODO cant fix dimensions
-        outputs = self.fnn(layers[0])
+        concatenated_inputs = tf.concat(layers, axis=-1)
+        outputs = self.fnn(concatenated_inputs)
         return outputs
-
-    def compute_session_embedding(self, inputs):
-        session_embedding = []
-        for feature, transformation in self._available_feature_transformations.items():
-            if feature in inputs:
-                transformed_feature = transformation(inputs[feature])
-            else:
-                transformed_feature = tf.zeros(shape=(0,), dtype=tf.float32)
-            session_embedding.append(tf.cast(transformed_feature, tf.float32))
-        # Step 1: Ensure 2D shapes for session_embedding tensors
-        session_embedding_2d = [
-            tf.expand_dims(tensor, -1) for tensor in session_embedding
-        ]
-
-        # Step 2: Concatenate session_embedding tensors along the feature axis
-        concatenated_session_embedding = tf.concat(session_embedding_2d, axis=-1)
-        return concatenated_session_embedding
 
     def call(self, inputs):
         print("Model received  input: ", inputs)
-        session_features = {
-            key: inputs.pop(key)
-            for key in self._available_feature_transformations
-            if key in inputs
-        }
-        item_features = inputs
-
-        # Get candidate embedding
-        candidate_embedding = self.compute_candidate_embedding(item_features)
-        session_embedding = self.compute_session_embedding(session_features)
-
-        # Assuming concatenated_session_embedding is now of shape (None, M) and candidate_embedding is of shape (None, 16),
-        # where M is the total number of session features after concatenation.
-
-        # Step 3: Concatenate concatenated_session_embedding with candidate_embedding
-        print("Before final concat concatenated_session_embedding: ", session_embedding)
-        print("Before final concat candidate_embedding: ", candidate_embedding)
-        final_input = tf.concat([session_embedding, candidate_embedding], axis=-1)
-
-        # final_input should now be of shape (None, M+16), ready to be passed to your Sequential model.
-        ratings_output = self.ratings(final_input)
+        layers = []
+        # Session features
+        # layers.append(self.language(inputs.pop("language")))
+        layers.append(tf.reshape(self.latitude(inputs.pop("latitude")), (-1,1)))
+        layers.append(tf.reshape(self.longitude(inputs.pop("longitude")), (-1,1)))
+        
+        candidate_embedding = self.compute_candidate_embedding(inputs)
+        layers.append(candidate_embedding)
+        
+        concatenated_inputs = tf.concat(layers, axis=1)
+        ratings_output = self.ratings(concatenated_inputs)
 
         return {"score": ratings_output}
 
