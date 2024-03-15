@@ -361,7 +361,7 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         # Creating ranking model
         self._ranking_model = RankingModel(
-            self._configs_dict, pk_index_list, categories_lists
+            self._configs_dict, categories_lists
         )
 
         for feat, val in catalog_config["schema"].items():
