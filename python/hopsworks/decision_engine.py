@@ -850,7 +850,7 @@ class RankingModel(tf.keras.Model):
                 )
                 layers.append(tensor)
 
-        print(layers)
+        layers = [tf.squeeze(l) for l in layers if len(l.shape.as_list()) == 3 else l]
         concatenated_inputs = tf.concat(layers, axis=-1)
         outputs = self.fnn(concatenated_inputs)
         return outputs
