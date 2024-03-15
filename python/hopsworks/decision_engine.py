@@ -361,8 +361,22 @@ class RecommendationDecisionEngine(DecisionEngine):
 
         # Creating ranking model
         self._ranking_model = RankingModel(
-            self._candidate_model
-        )  # TODO add adapt() for features in a retrain job
+            self._configs_dict, pk_index_list, categories_lists
+        )
+
+        for feat, val in catalog_config["schema"].items():
+            if "transformation" not in val.keys():
+                continue
+            if val["transformation"] in ["numeric", "timestamp"]:
+                self._ranking_model.normalized_feats[feat].adapt(
+                    self._catalog_df[feat].tolist()
+                )
+            # elif val["transformation"] == "text":
+            #     self._candidate_model.texts_embeddings[feat].layers[0].adapt(
+            #         self._catalog_df[feat].tolist()
+            #     )
+
+        ranking_model_module = RankingModelModule(self._ranking_model)
 
         # TODO remove hardcode features from items df
         instances_spec = {
@@ -389,8 +403,10 @@ class RecommendationDecisionEngine(DecisionEngine):
                 shape=(None,), dtype=tf.string, name="useragent"
             ),
         }
-        signatures = self._ranking_model.serve.get_concrete_function(instances_spec)
-        tf.saved_model.save(self._ranking_model, "ranking_model", signatures=signatures)
+        signatures = ranking_model_module.serve.get_concrete_function(instances_spec)
+        tf.saved_model.save(
+            ranking_model_module, "ranking_model", signatures=signatures
+        )
 
         mr_ranking_model = self._mr.tensorflow.create_model(
             name=self._prefix + "ranking_model",
@@ -667,10 +683,10 @@ class ItemCatalogEmbedding(tf.keras.Model):
             #     layers.append(self.texts_embeddings[feat](tf.expand_dims(text_inputs[feat], 0)))
             elif val["transformation"] in ["numeric", "timestamp"]:
                 tensor = tf.reshape(
-                        self.normalized_feats[feat](numeric_inputs[feat]), (-1, 1)
-                    )
+                    self.normalized_feats[feat](numeric_inputs[feat]), (-1, 1)
+                )
                 layers.append(tensor)
-                
+
         print(layers)
         concatenated_inputs = tf.concat(layers, axis=-1)
         outputs = self.fnn(concatenated_inputs)
@@ -692,14 +708,18 @@ class QueryModelModule(tf.Module):
         }
 
 
-class SessionModel(tf.keras.Model):
+class RankingModel(tf.keras.Model):
     """
     Session embedding model used in the Ranking model.
     """
 
-    def __init__(self, candidate_model):
+    def __init__(
+        self,
+        configs_dict: dict,
+        pk_index_list: List[str],
+        categories_lists: Dict[str, List[str]],
+    ):
         super().__init__()
-        self._candidate_model = candidate_model
 
         self.latitude = tf.keras.layers.Normalization(axis=None)
         self.longitude = tf.keras.layers.Normalization(axis=None)
@@ -749,25 +769,97 @@ class SessionModel(tf.keras.Model):
             ]
         )
 
-    def call(self, inputs):
-        print("Model received  input: ", inputs)
-        session_features = {
-            key: inputs.pop(key)
-            for key in self._available_feature_transformations
-            if key in inputs
-        }
-        item_features = {
-            key: tf.squeeze(inputs[key])
-            for key in inputs
-        }
+        self._configs_dict = configs_dict
+        item_space_dim = self._configs_dict["model_configuration"]["retrieval_model"][
+            "item_space_dim"
+        ]
 
-        # Get candidate embedding
-        candidate_embedding = self._candidate_model(item_features)
+        self.pk_embedding = tf.keras.Sequential(
+            [
+                tf.keras.layers.StringLookup(vocabulary=pk_index_list, mask_token=None),
+                tf.keras.layers.Embedding(
+                    # We add an additional embedding to account for unknown tokens.
+                    len(pk_index_list) + 1,
+                    item_space_dim,
+                ),
+            ]
+        )
 
+        self.categories_tokenizers = {}
+        self.categories_lens = {}
+        for feat, lst in categories_lists.items():
+            self.categories_tokenizers[feat] = tf.keras.layers.StringLookup(
+                vocabulary=lst, mask_token=None
+            )
+            self.categories_lens[feat] = len(lst)
+
+        vocab_size = 1000
+        # self.texts_embeddings = {}
+        self.normalized_feats = {}
+        for feat, val in self._configs_dict["product_list"]["schema"].items():
+            if "transformation" not in val.keys():
+                continue
+            # if val["transformation"] == "text":
+            #     self.texts_embeddings[feat] = tf.keras.Sequential(
+            #         [
+            #             tf.keras.layers.TextVectorization(
+            #                 max_tokens=vocab_size,
+            #             ),
+            #             tf.keras.layers.Embedding(
+            #                 vocab_size + 1, item_space_dim, mask_zero=True
+            #             ),
+            #             tf.keras.layers.GlobalAveragePooling1D(),
+            #         ]
+            #     )
+            if val["transformation"] in [
+                "numeric",
+                "timestamp",
+            ]:  # TODO change feature engineering for timestamps cause this is fucked
+                self.normalized_feats[feat] = tf.keras.layers.Normalization(axis=None)
+
+        self.fnn = tf.keras.Sequential(
+            [
+                tf.keras.layers.Dense(item_space_dim, activation="relu"),
+                tf.keras.layers.Dense(item_space_dim),
+            ]
+        )
+
+    def compute_candidate_embedding(self, inputs):
+        pk_inputs = inputs[self._configs_dict["product_list"]["primary_key"]]
+        category_inputs = {feat: inputs[feat] for feat in self.categories_tokenizers}
+        # text_inputs = {feat: inputs[feat] for feat in self.texts_embeddings} # TODO couldnt solve errors with Pooling layer
+        numeric_inputs = {feat: inputs[feat] for feat in self.normalized_feats}
+
+        layers = [self.pk_embedding(pk_inputs)]
+
+        for feat, val in self._configs_dict["product_list"]["schema"].items():
+            if "transformation" not in val.keys():
+                continue
+            if val["transformation"] == "category":
+                layers.append(
+                    tf.one_hot(
+                        self.categories_tokenizers[feat](category_inputs[feat]),
+                        self.categories_lens[feat],
+                    )
+                )
+            # elif val["transformation"] == "text":
+            #     layers.append(self.texts_embeddings[feat](tf.expand_dims(text_inputs[feat], 0)))
+            elif val["transformation"] in ["numeric", "timestamp"]:
+                tensor = tf.reshape(
+                    self.normalized_feats[feat](numeric_inputs[feat]), (-1, 1)
+                )
+                layers.append(tensor)
+
+        print(layers)
+        concatenated_inputs = tf.concat(layers, axis=-1)
+        outputs = self.fnn(concatenated_inputs)
+        return outputs
+
+    def compute_session_embedding(self, inputs):
         session_embedding = []
         for feature, transformation in self._available_feature_transformations.items():
-            if feature in session_features:
-                transformed_feature = transformation(session_features[feature])
+            if feature in inputs:
+                transformed_feature = transformation(inputs[feature])
             else:
                 transformed_feature = tf.zeros(shape=(0,), dtype=tf.float32)
             session_embedding.append(tf.cast(transformed_feature, tf.float32))
@@ -778,16 +870,28 @@ class SessionModel(tf.keras.Model):
 
         # Step 2: Concatenate session_embedding tensors along the feature axis
         concatenated_session_embedding = tf.concat(session_embedding_2d, axis=-1)
+        return concatenated_session_embedding
+
+    def call(self, inputs):
+        print("Model received  input: ", inputs)
+        session_features = {
+            key: inputs.pop(key)
+            for key in self._available_feature_transformations
+            if key in inputs
+        }
+        item_features = inputs
+
+        # Get candidate embedding
+        candidate_embedding = self.compute_candidate_embedding(item_features)
+        session_embedding = self.compute_session_embedding(session_features)
 
         # Assuming concatenated_session_embedding is now of shape (None, M) and candidate_embedding is of shape (None, 16),
         # where M is the total number of session features after concatenation.
 
         # Step 3: Concatenate concatenated_session_embedding with candidate_embedding
-        print("Before final concat concatenated_session_embedding: ", concatenated_session_embedding)
+        print("Before final concat concatenated_session_embedding: ", session_embedding)
         print("Before final concat candidate_embedding: ", candidate_embedding)
-        final_input = tf.concat(
-            [concatenated_session_embedding, candidate_embedding], axis=-1
-        )
+        final_input = tf.concat([session_embedding, candidate_embedding], axis=-1)
 
         # final_input should now be of shape (None, M+16), ready to be passed to your Sequential model.
         ratings_output = self.ratings(final_input)
@@ -795,26 +899,25 @@ class SessionModel(tf.keras.Model):
         return {"score": ratings_output}
 
 
-class RankingModel(tfrs.models.Model):
+class RankingModelModule(tfrs.models.Model):
     """
     Ranking model.
     """
 
-    # TODO hardcode because I dont know how to provide fucking signatures otherwise
     @tf.function()
     def serve(self, features):
         return self.call(features)
 
-    def __init__(self, candidate_model):
+    def __init__(self, session_model):
         super().__init__()
-        self._session_model = SessionModel(candidate_model)
+        self.session_model = session_model
         self.task: tf.keras.layers.Layer = tfrs.tasks.Ranking(
             loss=tf.keras.losses.MeanSquaredError(),
             metrics=[tf.keras.metrics.RootMeanSquaredError()],
         )
 
     def call(self, inputs):
-        return self._session_model(inputs)
+        return self.session_model(inputs)
 
     def compute_loss(self, inputs, training=False):
         labels = inputs.pop("score")
