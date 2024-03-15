@@ -800,7 +800,7 @@ class RankingModel(tf.keras.Model):
         # layers.append(tf.reshape(self.longitude(inputs.pop("longitude")), (-1,1)))
         
         candidate_layers = self.compute_candidate_embedding(inputs)
-        layers += candidate_layers
+        layers = candidate_layers
         
         concatenated_inputs = tf.concat(layers, axis=1)
         ratings_output = self.ratings(concatenated_inputs)
