@@ -789,8 +789,7 @@ class RankingModel(tf.keras.Model):
             #     layers.append(tensor)
 
         concatenated_inputs = tf.concat(layers, axis=-1)
-        outputs = self.fnn(concatenated_inputs)
-        return outputs
+        return concatenated_inputs
 
     def call(self, inputs):
         print("Model received  input: ", inputs)
@@ -800,8 +799,8 @@ class RankingModel(tf.keras.Model):
         layers.append(tf.reshape(self.latitude(inputs.pop("latitude")), (-1,1)))
         layers.append(tf.reshape(self.longitude(inputs.pop("longitude")), (-1,1)))
         
-        candidate_embedding = self.compute_candidate_embedding(inputs)
-        layers.append(candidate_embedding)
+        candidate_layers = self.compute_candidate_embedding(inputs)
+        layers += candidate_layers
         
         concatenated_inputs = tf.concat(layers, axis=1)
         ratings_output = self.ratings(concatenated_inputs)
