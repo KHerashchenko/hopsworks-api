@@ -666,7 +666,9 @@ class ItemCatalogEmbedding(tf.keras.Model):
             # elif val["transformation"] == "text":
             #     layers.append(self.texts_embeddings[feat](tf.expand_dims(text_inputs[feat], 0)))
             elif val["transformation"] in ["numeric", "timestamp"]:
-                tensor = tf.expand_dims(self.normalized_feats[feat](numeric_inputs[feat]), axis=0)
+                tensor = tf.reshape(
+                        self.normalized_feats[feat](numeric_inputs[feat]), (-1, 1)
+                    )
                 layers.append(tensor)
                 
         print(layers)
@@ -754,7 +756,10 @@ class SessionModel(tf.keras.Model):
             for key in self._available_feature_transformations
             if key in inputs
         }
-        item_features = inputs
+        item_features = {
+            key: tf.squeeze(inputs['key'])
+            for key in inputs
+        }
 
         # Get candidate embedding
         candidate_embedding = self._candidate_model(item_features)
