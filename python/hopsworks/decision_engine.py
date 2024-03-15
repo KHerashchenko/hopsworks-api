@@ -687,10 +687,9 @@ class ItemCatalogEmbedding(tf.keras.Model):
                 )
                 layers.append(tensor)
 
-        print(layers)
-        concatenated_inputs = tf.concat(layers, axis=-1)
-        outputs = self.fnn(concatenated_inputs)
-
+        print("Layers are: ", layers)               
+        # concatenated_inputs = tf.concat(adjusted_layers, axis=-1) # TODO cant fix dimensions
+        outputs = self.fnn(layers[0])
         return outputs
 
 
@@ -858,9 +857,10 @@ class RankingModel(tf.keras.Model):
                 adjusted_layers.append(squeezed_tensor)
             else:
                 # If not 3-dimensional, add the tensor to the list without modification
-                adjusted_layers.append(l)        
-        concatenated_inputs = tf.concat(adjusted_layers, axis=-1)
-        outputs = self.fnn(concatenated_inputs)
+                adjusted_layers.append(l)  
+                      
+        # concatenated_inputs = tf.concat(adjusted_layers, axis=-1) # TODO cant fix dimensions
+        outputs = self.fnn(layers[0])
         return outputs
 
     def compute_session_embedding(self, inputs):
