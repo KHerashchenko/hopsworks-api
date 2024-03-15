@@ -671,12 +671,8 @@ class ItemCatalogEmbedding(tf.keras.Model):
                         self.normalized_feats[feat](numeric_inputs[feat]), (-1, 1)
                     )
                 )
-
-        layers = [
-            tf.expand_dims(tensor, axis=0) if tensor.shape.rank == 1 else tensor
-            for tensor in layers
-        ]
-        concatenated_inputs = tf.concat(layers, axis=1)
+                
+        concatenated_inputs = tf.concat(layers, axis=-1)
         outputs = self.fnn(concatenated_inputs)
 
         return outputs
