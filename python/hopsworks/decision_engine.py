@@ -669,7 +669,8 @@ class ItemCatalogEmbedding(tf.keras.Model):
                 reshaped_tensor = tf.reshape(
                         self.normalized_feats[feat](numeric_inputs[feat]), (-1, 1)
                     )
-                reshaped_tensor = tf.expand_dims(reshaped_tensor, axis=0)
+                if len(layers[0].shape) == 3:
+                    reshaped_tensor = tf.expand_dims(reshaped_tensor, axis=0)
                 layers.append(reshaped_tensor)
                 
         concatenated_inputs = tf.concat(layers, axis=-1)
