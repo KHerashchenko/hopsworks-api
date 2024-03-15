@@ -719,8 +719,8 @@ class RankingModel(tf.keras.Model):
     ):
         super().__init__()
 
-        self.latitude = tf.keras.layers.Normalization(axis=None)
-        self.longitude = tf.keras.layers.Normalization(axis=None)
+        # self.latitude = tf.keras.layers.Normalization(axis=None)
+        # self.longitude = tf.keras.layers.Normalization(axis=None)
 
         # language_codes = [
         #     "en",
@@ -796,8 +796,8 @@ class RankingModel(tf.keras.Model):
         layers = []
         # Session features
         # layers.append(self.language(inputs.pop("language")))
-        layers.append(tf.reshape(self.latitude(inputs.pop("latitude")), (-1,1)))
-        layers.append(tf.reshape(self.longitude(inputs.pop("longitude")), (-1,1)))
+        # layers.append(tf.reshape(self.latitude(inputs.pop("latitude")), (-1,1)))
+        # layers.append(tf.reshape(self.longitude(inputs.pop("longitude")), (-1,1)))
         
         candidate_layers = self.compute_candidate_embedding(inputs)
         layers += candidate_layers
