@@ -850,8 +850,16 @@ class RankingModel(tf.keras.Model):
                 )
                 layers.append(tensor)
 
-        layers = [tf.squeeze(l) for l in layers if len(l.shape.as_list()) == 3 else l]
-        concatenated_inputs = tf.concat(layers, axis=-1)
+        adjusted_layers = []
+        for l in layers:
+            if len(l.shape.as_list()) == 3:  # Check if the tensor has exactly 3 dimensions
+                # Squeeze the tensor to remove the singleton dimension
+                squeezed_tensor = tf.squeeze(l, axis=0)  # Assumes the singleton dimension is the first
+                adjusted_layers.append(squeezed_tensor)
+            else:
+                # If not 3-dimensional, add the tensor to the list without modification
+                adjusted_layers.append(l)        
+        concatenated_inputs = tf.concat(adjusted_layers, axis=-1)
         outputs = self.fnn(concatenated_inputs)
         return outputs
 
