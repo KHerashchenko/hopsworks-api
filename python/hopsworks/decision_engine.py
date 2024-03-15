@@ -757,7 +757,7 @@ class SessionModel(tf.keras.Model):
             if key in inputs
         }
         item_features = {
-            key: tf.squeeze(inputs['key'])
+            key: tf.squeeze(inputs[key])
             for key in inputs
         }
 
