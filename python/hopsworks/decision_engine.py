@@ -666,11 +666,12 @@ class ItemCatalogEmbedding(tf.keras.Model):
             # elif val["transformation"] == "text":
             #     layers.append(self.texts_embeddings[feat](tf.expand_dims(text_inputs[feat], 0)))
             elif val["transformation"] in ["numeric", "timestamp"]:
-                layers.append(
-                    tf.reshape(
+                reshaped_tensor = tf.reshape(
                         self.normalized_feats[feat](numeric_inputs[feat]), (-1, 1)
                     )
-                )
+                if tf.rank(layers[0]).numpy() == 3 and tf.rank(reshaped_tensor[0]).numpy() == 2:
+                    reshaped_tensor = tf.expand_dims(reshaped_tensor, axis=0)
+                layers.append(reshaped_tensor)
                 
         concatenated_inputs = tf.concat(layers, axis=-1)
         outputs = self.fnn(concatenated_inputs)
