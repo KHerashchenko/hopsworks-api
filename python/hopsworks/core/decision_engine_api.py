@@ -1,8 +1,4 @@
-import json
-
 from hopsworks import decision_engine, client
-from hopsworks.client.exceptions import DecisionEngineException
-
 
 class DecisionEngineApi:
     def __init__(
@@ -13,46 +9,72 @@ class DecisionEngineApi:
         self._project_id = project_id
         self._project_name = project_name
         
-    def create_decision_engine(self, name, config_path):
-
-        dct = {'name': name, 'config_path': config_path}
-        _client = client.get_instance()
-        path_params = ["project", self._project_id, "python", "decision_engines"]
-
-        return decision_engine.DecisionEngine.from_response_json(
-            _client._send_request("POST", path_params, json.dumps(dct)),
-            self._project_id,
-            self._project_name,
-        )
-
-    def _get_decision_engines(self):
+    def get_all(self):
         """
         Get all available python decision engines in the project
         """
         _client = client.get_instance()
 
-        path_params = ["project", self._project_id, "python", "decision_engines"]
+        path_params = ["project", self._project_id, "decision_engine"]
 
         return decision_engine.DecisionEngine.from_response_json(
             _client._send_request("GET", path_params),
-            self._project_id,
-            self._project_name,
         )
 
-    def get_decision_engine(self, name: str):
-        """Get decision engine by name.
-
-        # Arguments
-            name: name of the decision engine
-        # Returns
-            `KafkaTopic`: The DecisionEngine object
-        # Raises
-            `RestAPIError`: If unable to get the topic
+    def get_by_name(self, name):
         """
-        des = self._get_decision_engines()
+        Get decision engine by name in the project
+        """
+        _client = client.get_instance()
 
-        for de in des:
-            if de.name == name:
-                return de
+        path_params = ["project", self._project_id, "decision_engine", name]
 
-        raise DecisionEngineException("No decision engine named {} could be found".format(name))
+        return decision_engine.DecisionEngine.from_response_json(
+            _client._send_request("GET", path_params),
+        )
+        
+
+    def get_by_id(self, id):
+        """
+        Get decision engine by id in the project
+        """
+        _client = client.get_instance()
+
+        path_params = ["project", self._project_id, "decision_engine", id]
+
+        return decision_engine.DecisionEngine.from_response_json(
+            _client._send_request("GET", path_params),
+        )
+        
+    def create(self, decision_engine):
+        """
+        Create from DecisionEngine object
+        """
+        dct = decision_engine.json()
+        _client = client.get_instance()
+        path_params = ["project", self._project_id, "decision_engine"]
+
+        return decision_engine.DecisionEngine.from_response_json(
+            _client._send_request("POST", path_params, dct)
+        )        
+        
+    def update(self, decision_engine):
+        """
+        Get all available python decision engines in the project
+        """
+        dct = decision_engine.json()
+        _client = client.get_instance()
+
+        path_params = ["project", self._project_id, "decision_engine", decision_engine._id]
+
+        return decision_engine.DecisionEngine.from_response_json(
+            _client._send_request("PUT", path_params, dct),
+        )
+    
+    def delete(self, decision_engine):
+        """
+        Delete decision engine by id.
+        """
+        _client = client.get_instance()
+        path_params = ["project", self._project_id, "decision_engine", decision_engine._id]
+        _client._send_request("DELETE", path_params)
