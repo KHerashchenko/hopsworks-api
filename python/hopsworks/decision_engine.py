@@ -48,9 +48,9 @@ class DecisionEngine():
             [self._client._project_name, self._configs_dict["name"], "events"]
         )
 
-        if self._configs_dict['use_case'] == "recommendation_engine":
+        if self._configs_dict['use_case'] == "recommendation":
             self._decision_engine_engine = decision_engine_engine.RecommendationDecisionEngineEngine()
-        elif self._configs_dict['use_case'] == "search_engine":
+        elif self._configs_dict['use_case'] == "search":
             self._decision_engine_engine = decision_engine_engine.SearchDecisionEngineEngine()
             
 

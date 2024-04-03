@@ -9,7 +9,7 @@ from hsfs.feature import Feature
 from opensearchpy import OpenSearch
 from opensearchpy.helpers import bulk
 
-from python.hopsworks.engine import decision_engine_model
+from hopsworks.engine import decision_engine_model
 import tensorflow as tf
 
 # tf.keras.backend.set_floatx('float64') # didnt solve the error
@@ -478,6 +478,8 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         redirect_deployment = de._redirect_model.deploy(
             (de._prefix + "events_redirect_deployment").replace("_", "").lower(),
             script_file=redirector_script_path,
+            resources={"num_instances": 1},
+            description="Deployment that redirects session activity to Kafka",
         )
 
         try:
