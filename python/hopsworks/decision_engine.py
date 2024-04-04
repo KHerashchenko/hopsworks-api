@@ -78,7 +78,7 @@ class DecisionEngine():
         return self
 
     def load_configs(self, file_path):
-        downloaded_file_path = self._dataset_api.download(file_path)
+        downloaded_file_path = self._dataset_api.download(file_path, overwrite=True)
         with open(downloaded_file_path, 'r') as yaml_file:
             configs_dict = yaml.safe_load(yaml_file)
         return configs_dict

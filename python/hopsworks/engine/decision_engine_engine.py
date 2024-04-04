@@ -77,7 +77,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             version=1,
         )
 
-        downloaded_file_path = de._dataset_api.download(catalog_config["file_path"])
+        downloaded_file_path = de._dataset_api.download(catalog_config["file_path"], overwrite=True)
 
         de._catalog_df = pd.read_csv(
             downloaded_file_path,
