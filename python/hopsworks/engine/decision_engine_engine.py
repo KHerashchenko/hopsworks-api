@@ -77,8 +77,10 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             version=1,
         )
 
+        downloaded_file_path = de._dataset_api.download(catalog_config["file_path"])
+
         de._catalog_df = pd.read_csv(
-            catalog_config["file_path"],
+            downloaded_file_path,
             parse_dates=[
                 feat
                 for feat, val in catalog_config["schema"].items()

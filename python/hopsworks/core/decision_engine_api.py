@@ -11,7 +11,7 @@ class DecisionEngineApi:
         
     def get_all(self):
         """
-        Get all available python decision engines in the project
+        Get all decision engines in the project.
         """
         _client = client.get_instance()
 
@@ -23,7 +23,7 @@ class DecisionEngineApi:
 
     def get_by_name(self, name):
         """
-        Get decision engine by name in the project
+        Get decision engine by name in the project.
         """
         _client = client.get_instance()
 
@@ -35,7 +35,7 @@ class DecisionEngineApi:
 
     def get_by_id(self, id):
         """
-        Get decision engine by id in the project
+        Get decision engine by id in the project.
         """
         _client = client.get_instance()
 
@@ -46,11 +46,11 @@ class DecisionEngineApi:
         )
 
         
-    def create(self, decision_engine):
+    def create(self, de):
         """
-        Create from DecisionEngine object
+        Create decision engine from DecisionEngine object.
         """
-        dct = decision_engine.json()
+        dct = de.json()
         _client = client.get_instance()
         path_params = ["project", self._project_id, "decisionengine"]
 
@@ -58,23 +58,23 @@ class DecisionEngineApi:
             _client._send_request("POST", path_params, data=dct)
         )        
         
-    def update(self, decision_engine):
+    def update(self, de):
         """
-        Get all available python decision engines in the project
+        Update decision engine from DecisionEngine object.
         """
-        dct = decision_engine.json()
+        dct = de.json()
         _client = client.get_instance()
 
-        path_params = ["project", self._project_id, "decisionengine", decision_engine._id]
+        path_params = ["project", self._project_id, "decisionengine", de._id]
 
         return decision_engine.DecisionEngine.from_response_json(
             _client._send_request("PUT", path_params, data=dct),
         )
     
-    def delete(self, decision_engine):
+    def delete(self, de):
         """
         Delete decision engine by id.
         """
         _client = client.get_instance()
-        path_params = ["project", self._project_id, "decisionengine", decision_engine._id]
+        path_params = ["project", self._project_id, "decisionengine", de._id]
         _client._send_request("DELETE", path_params)
