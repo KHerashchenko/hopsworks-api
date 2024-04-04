@@ -15,7 +15,7 @@ class DecisionEngineApi:
         """
         _client = client.get_instance()
 
-        path_params = ["project", self._project_id, "decision_engine"]
+        path_params = ["project", self._project_id, "decisionengine"]
 
         return decision_engine.DecisionEngine.from_response_json(
             _client._send_request("GET", path_params),
@@ -27,12 +27,12 @@ class DecisionEngineApi:
         """
         _client = client.get_instance()
 
-        path_params = ["project", self._project_id, "decision_engine", name]
+        query_params = {"name": name}
+        path_params = ["project", self._project_id, "decisionengine"]
 
         return decision_engine.DecisionEngine.from_response_json(
-            _client._send_request("GET", path_params),
+            _client._send_request("GET", path_params, query_params=query_params),
         )
-        
 
     def get_by_id(self, id):
         """
@@ -40,11 +40,13 @@ class DecisionEngineApi:
         """
         _client = client.get_instance()
 
-        path_params = ["project", self._project_id, "decision_engine", id]
+        query_params = {"id": id}
+        path_params = ["project", self._project_id, "decisionengine"]
 
         return decision_engine.DecisionEngine.from_response_json(
-            _client._send_request("GET", path_params),
+            _client._send_request("GET", path_params, query_params=query_params),
         )
+
         
     def create(self, decision_engine):
         """
@@ -52,10 +54,10 @@ class DecisionEngineApi:
         """
         dct = decision_engine.json()
         _client = client.get_instance()
-        path_params = ["project", self._project_id, "decision_engine"]
+        path_params = ["project", self._project_id, "decisionengine"]
 
         return decision_engine.DecisionEngine.from_response_json(
-            _client._send_request("POST", path_params, dct)
+            _client._send_request("POST", path_params, data=dct)
         )        
         
     def update(self, decision_engine):
@@ -65,10 +67,10 @@ class DecisionEngineApi:
         dct = decision_engine.json()
         _client = client.get_instance()
 
-        path_params = ["project", self._project_id, "decision_engine", decision_engine._id]
+        path_params = ["project", self._project_id, "decisionengine", decision_engine._id]
 
         return decision_engine.DecisionEngine.from_response_json(
-            _client._send_request("PUT", path_params, dct),
+            _client._send_request("PUT", path_params, data=dct),
         )
     
     def delete(self, decision_engine):
@@ -76,5 +78,5 @@ class DecisionEngineApi:
         Delete decision engine by id.
         """
         _client = client.get_instance()
-        path_params = ["project", self._project_id, "decision_engine", decision_engine._id]
+        path_params = ["project", self._project_id, "decisionengine", decision_engine._id]
         _client._send_request("DELETE", path_params)
