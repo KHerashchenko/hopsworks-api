@@ -27,11 +27,10 @@ class DecisionEngineApi:
         """
         _client = client.get_instance()
 
-        query_params = {"name": name}
-        path_params = ["project", self._project_id, "decisionengine"]
+        path_params = ["project", self._project_id, "decisionengine", 'name', name]
 
         return decision_engine.DecisionEngine.from_response_json(
-            _client._send_request("GET", path_params, query_params=query_params),
+            _client._send_request("GET", path_params),
         )
 
     def get_by_id(self, id):
@@ -40,11 +39,10 @@ class DecisionEngineApi:
         """
         _client = client.get_instance()
 
-        query_params = {"id": id}
-        path_params = ["project", self._project_id, "decisionengine"]
+        path_params = ["project", self._project_id, "decisionengine", id]
 
         return decision_engine.DecisionEngine.from_response_json(
-            _client._send_request("GET", path_params, query_params=query_params),
+            _client._send_request("GET", path_params),
         )
 
         
