@@ -19,7 +19,6 @@ class DecisionEngine():
         self._config_file_path = config_file_path
         self._job_name = job_name
         
-        self._configs_dict = self.load_configs(self._config_file_path)
         self._prefix = "de_" + self._name + "_"
         self._catalog_df = None
         self._retrieval_model = None
@@ -31,6 +30,8 @@ class DecisionEngine():
             self._client._project_id, self._client._project_name
         )
         self._dataset_api = dataset_api.DatasetApi(self._client._project_id)
+        self._configs_dict = self.load_configs(self._config_file_path)
+        
         self._kafka_api = kafka_api.KafkaApi(
             self._client._project_id, self._client._project_name
         )
@@ -77,7 +78,8 @@ class DecisionEngine():
         return self
 
     def load_configs(self, file_path):
-        with open(file_path, 'r') as yaml_file:
+        downloaded_file_path = self._dataset_api.download(file_path)
+        with open(downloaded_file_path, 'r') as yaml_file:
             self._configs_dict = yaml.safe_load(yaml_file)
             
     def to_dict(self):
