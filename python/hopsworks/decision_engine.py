@@ -84,7 +84,7 @@ class DecisionEngine():
         return configs_dict
             
     def to_dict(self):
-        return humps.camelize({"name": self._name, "config_file_path": self._config_file_path, "use_case": self._use_case})
+        return humps.camelize({"name": self._name, "config_file_path": self._config_file_path, "use_case": self._use_case.upper()})
 
     def json(self) -> str:
         return json.dumps(self.to_dict())
