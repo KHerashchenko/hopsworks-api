@@ -108,6 +108,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             description="Events stream for the Decision Engine project",
             primary_key=["event_id"],  # TODO autoincrement?
             online_enabled=True,
+            stream=True,
             version=1,
         )
 
@@ -150,7 +151,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         decisions_fg = de._fs.get_or_create_feature_group(
             name=de._prefix + "decisions",
             description="Decisions logging for the Decision Engine project",
-            primary_key=["decision_id"],  # TODO autoincrement?
+            primary_key=["decision_id", "session_id"], 
             online_enabled=True,
             version=1,
         )
