@@ -56,25 +56,18 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         # Creating product list FG
         catalog_config = de._configs_dict["product_list"]
 
+        item_features = [
+            Feature(name=feat, type=val["type"])
+            for feat, val in catalog_config["schema"].items()
+        ]
+
         items_fg = de._fs.get_or_create_feature_group(
             name=de._prefix + catalog_config["feature_view_name"],
             description="Catalog for the Decision Engine project",
             primary_key=[catalog_config["primary_key"]],
             online_enabled=True,
             version=1,
-        )
-
-        item_features = [
-            Feature(name=feat, type=val["type"])
-            for feat, val in catalog_config["schema"].items()
-        ]
-        items_fg.save(features=item_features)
-
-        # Creating items FV
-        items_fv = de._fs.get_or_create_feature_view(
-            name=de._prefix + catalog_config["feature_view_name"],
-            query=items_fg.select_all(),
-            version=1,
+            features=item_features
         )
 
         downloaded_file_path = de._dataset_api.download(catalog_config["file_path"], overwrite=True)
@@ -88,6 +81,13 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             ],
         )
         items_fg.insert(de._catalog_df[catalog_config["schema"].keys()])
+        
+        # Creating items FV
+        items_fv = de._fs.get_or_create_feature_view(
+            name=de._prefix + catalog_config["feature_view_name"],
+            query=items_fg.select_all(),
+            version=1,
+        )
 
         # TODO tensorflow errors if col is of type float64, expecting float32
         # TODO where timestamp feature transformation should happen? (converting into unix format)
