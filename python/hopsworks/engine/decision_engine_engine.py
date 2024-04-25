@@ -469,15 +469,18 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             script_file=transformer_script_path, resources={"num_instances": 1}
         )
 
+        script_path = os.path.join(
+                    de._ranking_model.version_path, "ranking_model_predictor.py"
+                )
         ranking_deployment = de._ranking_model.deploy(
             name=(de._prefix + "ranking_deployment").replace("_", "").lower(),
-            script_file=redirector_script_path,
+            script_file=script_path,
             resources={"num_instances": 1},
             description="Deployment that searches for item candidates and scores them based on session context and query embedding",
             transformer=ranking_transformer,
         )
 
-        # Creating deployment for events endpoint
+        # Creating deployment for redirect events endpoint
         redirector_script_path = os.path.join(
             de._redirect_model.version_path, "events_redirect_predictor.py"
         )
