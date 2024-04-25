@@ -103,21 +103,24 @@ class ItemCatalogEmbedding(tf.keras.Model):
         outputs = self.fnn(layers[0])
         return outputs
 
-
-class QueryModelModule(tf.Module):
-    def __init__(self, query_model):
-        self.query_model = query_model
+class QueryModel(tf.Module):
+    def __init__(self, vocabulary, item_space_dim):
+        super(QueryModel, self).__init__()
+        self.query_model = tf.keras.Sequential([
+            tf.keras.layers.StringLookup(vocabulary=vocabulary, mask_token=None),
+            tf.keras.layers.Embedding(
+                len(vocabulary) + 1, item_space_dim
+            ),
+            tf.keras.layers.GRU(item_space_dim)
+        ])
 
     @tf.function()
     def compute_emb(self, instances):
         # Compute the query embeddings
         query_emb = self.query_model(instances["context_item_ids"])
         # Ensure the output is a dictionary of tensors
-        return {
-            "query_emb": query_emb,
-        }
-
-
+        return {"query_emb": query_emb}
+    
 class RankingModel(tf.keras.Model):
     """
     Session embedding model used in the Ranking model.

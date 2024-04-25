@@ -172,7 +172,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         decisions_fg.save(features=decisions_features)
 
     def build_models(self, de):
-        # Creating retrieval model
+        # Creating candidate model
         catalog_config = de._configs_dict["product_list"]
         retrieval_config = de._configs_dict["model_configuration"]["retrieval_model"]
 
@@ -233,17 +233,9 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         )
         candidate_model.save("candidate_model")
 
-        de._query_model = tf.keras.Sequential(
-            [
-                tf.keras.layers.StringLookup(vocabulary=pk_index_list, mask_token=None),
-                tf.keras.layers.Embedding(
-                    len(pk_index_list) + 1, retrieval_config["item_space_dim"]
-                ),
-                tf.keras.layers.GRU(retrieval_config["item_space_dim"]),
-            ]
-        )
+        # Creating query model
+        query_model = decision_engine_model.QueryModel(vocabulary=pk_index_list, item_space_dim=retrieval_config["item_space_dim"])
 
-        query_model_module = decision_engine_model.QueryModelModule(de._query_model)
         # Define the input specifications for the instances
         instances_spec = {
             "context_item_ids": tf.TensorSpec(
@@ -252,13 +244,13 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         }
 
         # Get the concrete function for the query_model's compute_emb function using the specified input signatures
-        signatures = query_model_module.compute_emb.get_concrete_function(
+        signatures = query_model.compute_emb.get_concrete_function(
             instances_spec
         )
 
         # Save the query_model along with the concrete function signatures
         tf.saved_model.save(
-            query_model_module,
+            query_model,
             "query_model",
             signatures=signatures,
         )
@@ -287,63 +279,76 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         )
         mr_query_model.save("query_model")
 
-        # Creating ranking model
-        de._ranking_model = decision_engine_model.RankingModel(
-            de._configs_dict, categories_lists
-        )
+        # # Creating ranking model
+        # de._ranking_model = decision_engine_model.RankingModel(
+        #     de._configs_dict, categories_lists
+        # )
 
-        for feat, val in catalog_config["schema"].items():
-            if "transformation" not in val.keys():
-                continue
-            if val["transformation"] in ["numeric", "timestamp"]:
-                de._ranking_model.normalized_feats[feat].adapt(
-                    de._catalog_df[feat].tolist()
-                )
-            # elif val["transformation"] == "text":
-            #     de._candidate_model.texts_embeddings[feat].layers[0].adapt(
-            #         de._catalog_df[feat].tolist()
-            #     )
+        # for feat, val in catalog_config["schema"].items():
+        #     if "transformation" not in val.keys():
+        #         continue
+        #     if val["transformation"] in ["numeric", "timestamp"]:
+        #         de._ranking_model.normalized_feats[feat].adapt(
+        #             de._catalog_df[feat].tolist()
+        #         )
+        #     # elif val["transformation"] == "text":
+        #     #     de._candidate_model.texts_embeddings[feat].layers[0].adapt(
+        #     #         de._catalog_df[feat].tolist()
+        #     #     )
 
-        ranking_model_module = decision_engine_model.RankingModelModule(
-            de._ranking_model
-        )
+        # ranking_model_module = decision_engine_model.RankingModelModule(
+        #     de._ranking_model
+        # )
 
-        # TODO remove hardcode features from items df
-        instances_spec = {
-            "article_id": tf.TensorSpec(
-                shape=(None,), dtype=tf.string, name="article_id"
-            ),
-            "detail_desc": tf.TensorSpec(
-                shape=(None,), dtype=tf.string, name="detail_desc"
-            ),
-            "price": tf.TensorSpec(shape=(None,), dtype=tf.float32, name="price"),
-            "prod_name": tf.TensorSpec(
-                shape=(None,), dtype=tf.string, name="prod_name"
-            ),
-            "product_type_name": tf.TensorSpec(
-                shape=(None,), dtype=tf.string, name="product_type_name"
-            ),
-            "t_dat": tf.TensorSpec(shape=(None,), dtype=tf.int64, name="t_dat"),
-            "longitude": tf.TensorSpec(
-                shape=(None,), dtype=tf.float32, name="longitude"
-            ),
-            "latitude": tf.TensorSpec(shape=(None,), dtype=tf.float32, name="latitude"),
-            "language": tf.TensorSpec(shape=(None,), dtype=tf.string, name="language"),
-            "useragent": tf.TensorSpec(
-                shape=(None,), dtype=tf.string, name="useragent"
-            ),
-        }
-        signatures = ranking_model_module.serve.get_concrete_function(instances_spec)
-        tf.saved_model.save(
-            ranking_model_module, "ranking_model", signatures=signatures
-        )
+        # # TODO remove hardcode features from items df
+        # instances_spec = {
+        #     "article_id": tf.TensorSpec(
+        #         shape=(None,), dtype=tf.string, name="article_id"
+        #     ),
+        #     "detail_desc": tf.TensorSpec(
+        #         shape=(None,), dtype=tf.string, name="detail_desc"
+        #     ),
+        #     "price": tf.TensorSpec(shape=(None,), dtype=tf.float32, name="price"),
+        #     "prod_name": tf.TensorSpec(
+        #         shape=(None,), dtype=tf.string, name="prod_name"
+        #     ),
+        #     "product_type_name": tf.TensorSpec(
+        #         shape=(None,), dtype=tf.string, name="product_type_name"
+        #     ),
+        #     "t_dat": tf.TensorSpec(shape=(None,), dtype=tf.int64, name="t_dat"),
+        #     "longitude": tf.TensorSpec(
+        #         shape=(None,), dtype=tf.float32, name="longitude"
+        #     ),
+        #     "latitude": tf.TensorSpec(shape=(None,), dtype=tf.float32, name="latitude"),
+        #     "language": tf.TensorSpec(shape=(None,), dtype=tf.string, name="language"),
+        #     "useragent": tf.TensorSpec(
+        #         shape=(None,), dtype=tf.string, name="useragent"
+        #     ),
+        # }
+        # signatures = ranking_model_module.serve.get_concrete_function(instances_spec)
+        # tf.saved_model.save(
+        #     ranking_model_module, "ranking_model", signatures=signatures
+        # )
+
+        # mr_ranking_model = de._mr.tensorflow.create_model(
+        #     name=de._prefix + "ranking_model",
+        #     description="Ranking model that scores item candidates",
+        # )
+        # mr_ranking_model.save("ranking_model")
 
         mr_ranking_model = de._mr.tensorflow.create_model(
             name=de._prefix + "ranking_model",
             description="Ranking model that scores item candidates",
         )
-        mr_ranking_model.save("ranking_model")
-
+        script_path = os.path.join(
+            "/Projects",
+            de._client._project_name,
+            "Resources",
+            "decision-engine",
+            "ranking_model_predictor.py",
+        )
+        mr_ranking_model.save(script_path, keep_original_files=True)
+        
         # Creating Redirect model for events redirect to Kafka
         de._redirect_model = de._mr.python.create_model(
             de._prefix + "events_redirect",
