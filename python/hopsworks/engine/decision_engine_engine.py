@@ -336,7 +336,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         # )
         # mr_ranking_model.save("ranking_model")
 
-        de._ranking_model = de._mr.tensorflow.create_model(
+        de._ranking_model = de._mr.python.create_model(
             name=de._prefix + "ranking_model",
             description="Ranking model that scores item candidates",
         )
