@@ -244,7 +244,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         }
 
         # Get the concrete function for the query_model's compute_emb function using the specified input signatures
-        signatures = query_model.compute_emb.get_concrete_function(
+        signatures = query_model.get_concrete_function(
             instances_spec
         )
 
