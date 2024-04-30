@@ -279,75 +279,15 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         )
         mr_query_model.save("query_model")
 
-        # # Creating ranking model
-        # de._ranking_model = decision_engine_model.RankingModel(
-        #     de._configs_dict, categories_lists
-        # )
-
-        # for feat, val in catalog_config["schema"].items():
-        #     if "transformation" not in val.keys():
-        #         continue
-        #     if val["transformation"] in ["numeric", "timestamp"]:
-        #         de._ranking_model.normalized_feats[feat].adapt(
-        #             de._catalog_df[feat].tolist()
-        #         )
-        #     # elif val["transformation"] == "text":
-        #     #     de._candidate_model.texts_embeddings[feat].layers[0].adapt(
-        #     #         de._catalog_df[feat].tolist()
-        #     #     )
-
-        # ranking_model_module = decision_engine_model.RankingModelModule(
-        #     de._ranking_model
-        # )
-
-        # # TODO remove hardcode features from items df
-        # instances_spec = {
-        #     "article_id": tf.TensorSpec(
-        #         shape=(None,), dtype=tf.string, name="article_id"
-        #     ),
-        #     "detail_desc": tf.TensorSpec(
-        #         shape=(None,), dtype=tf.string, name="detail_desc"
-        #     ),
-        #     "price": tf.TensorSpec(shape=(None,), dtype=tf.float32, name="price"),
-        #     "prod_name": tf.TensorSpec(
-        #         shape=(None,), dtype=tf.string, name="prod_name"
-        #     ),
-        #     "product_type_name": tf.TensorSpec(
-        #         shape=(None,), dtype=tf.string, name="product_type_name"
-        #     ),
-        #     "t_dat": tf.TensorSpec(shape=(None,), dtype=tf.int64, name="t_dat"),
-        #     "longitude": tf.TensorSpec(
-        #         shape=(None,), dtype=tf.float32, name="longitude"
-        #     ),
-        #     "latitude": tf.TensorSpec(shape=(None,), dtype=tf.float32, name="latitude"),
-        #     "language": tf.TensorSpec(shape=(None,), dtype=tf.string, name="language"),
-        #     "useragent": tf.TensorSpec(
-        #         shape=(None,), dtype=tf.string, name="useragent"
-        #     ),
-        # }
-        # signatures = ranking_model_module.serve.get_concrete_function(instances_spec)
-        # tf.saved_model.save(
-        #     ranking_model_module, "ranking_model", signatures=signatures
-        # )
-
-        # mr_ranking_model = de._mr.tensorflow.create_model(
-        #     name=de._prefix + "ranking_model",
-        #     description="Ranking model that scores item candidates",
-        # )
-        # mr_ranking_model.save("ranking_model")
+        # Creating Ranking model placeholder
+        placeholder_model = decision_engine_model.RandomPredictor()
+        placeholder_model.save('ranking_model/ranking_model.pkl')
 
         de._ranking_model = de._mr.python.create_model(
             name=de._prefix + "ranking_model",
             description="Ranking model that scores item candidates",
         )
-        script_path = os.path.join(
-            "/Projects",
-            de._client._project_name,
-            "Resources",
-            "decision-engine",
-            "ranking_model_predictor.py",
-        )
-        de._ranking_model.save(script_path, keep_original_files=True)
+        de._ranking_model.save("ranking_model")
         
         # Creating Redirect model for events redirect to Kafka
         de._redirect_model = de._mr.python.create_model(
@@ -502,7 +442,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
 
     def build_jobs(self, de):
         # The job retraining the models.
-        py_config = de._jobs_api.get_configuration("PYTHON")
+        py_config = de._jobs_api.get_configuration("PYSPARK")
         py_config["appPath"] = os.path.join(
             "/Projects",
             de._client._project_name,
