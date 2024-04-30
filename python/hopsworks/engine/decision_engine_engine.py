@@ -67,10 +67,12 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             primary_key=[catalog_config["primary_key"]],
             online_enabled=True,
             version=1,
-            features=item_features
+            features=item_features,
         )
 
-        downloaded_file_path = de._dataset_api.download(catalog_config["file_path"], overwrite=True)
+        downloaded_file_path = de._dataset_api.download(
+            catalog_config["file_path"], overwrite=True
+        )
 
         de._catalog_df = pd.read_csv(
             downloaded_file_path,
@@ -81,7 +83,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             ],
         )
         items_fg.insert(de._catalog_df[catalog_config["schema"].keys()])
-        
+
         # Creating items FV
         items_fv = de._fs.get_or_create_feature_view(
             name=de._prefix + catalog_config["feature_view_name"],
@@ -95,9 +97,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             if val["type"] == "float":
                 de._catalog_df[feat] = de._catalog_df[feat].astype("float32")
             if "transformation" in val.keys() and val["transformation"] == "timestamp":
-                de._catalog_df[feat] = (
-                    de._catalog_df[feat].astype(np.int64) // 10**9
-                )
+                de._catalog_df[feat] = de._catalog_df[feat].astype(np.int64) // 10**9
         de._catalog_df[catalog_config["primary_key"]] = de._catalog_df[
             catalog_config["primary_key"]
         ].astype(str)
@@ -151,7 +151,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         decisions_fg = de._fs.get_or_create_feature_group(
             name=de._prefix + "decisions",
             description="Decisions logging for the Decision Engine project",
-            primary_key=["decision_id", "session_id"], 
+            primary_key=["decision_id", "session_id"],
             online_enabled=True,
             version=1,
         )
@@ -234,32 +234,19 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         candidate_model.save("candidate_model")
 
         # Creating query model
-        query_model = decision_engine_model.QueryModel(vocabulary=pk_index_list, item_space_dim=retrieval_config["item_space_dim"])
-
-        # Define the input specifications for the instances
-        instances_spec = {
-            "context_item_ids": tf.TensorSpec(
-                shape=(None, None), dtype=tf.string, name="context_item_ids"
-            ),
-        }
-
-        # Get the concrete function for the query_model's compute_emb function using the specified input signatures
-        signatures = query_model.get_concrete_function(
-            instances_spec
+        query_model = decision_engine_model.QueryModel(
+            vocabulary=pk_index_list, item_space_dim=retrieval_config["item_space_dim"]
         )
 
         # Save the query_model along with the concrete function signatures
         tf.saved_model.save(
             query_model,
             "query_model",
-            signatures=signatures,
         )
 
         query_model_schema = ModelSchema(
             input_schema=Schema(
-                de._catalog_df.head()[
-                    de._configs_dict["product_list"]["primary_key"]
-                ]
+                de._catalog_df.head()[de._configs_dict["product_list"]["primary_key"]]
             ),
             output_schema=Schema(
                 [
@@ -281,14 +268,14 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
 
         # Creating Ranking model placeholder
         placeholder_model = decision_engine_model.RandomPredictor()
-        placeholder_model.save('ranking_model/ranking_model.pkl')
+        placeholder_model.save("ranking_model/ranking_model.pkl")
 
         de._ranking_model = de._mr.python.create_model(
             name=de._prefix + "ranking_model",
             description="Ranking model that scores item candidates",
         )
         de._ranking_model.save("ranking_model")
-        
+
         # Creating Redirect model for events redirect to Kafka
         de._redirect_model = de._mr.python.create_model(
             de._prefix + "events_redirect",
@@ -375,9 +362,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
 
     def build_deployments(self, de):
         # Creating deployment for query model
-        mr_query_model = de._mr.get_model(
-            name=de._prefix + "query_model", version=1
-        )
+        mr_query_model = de._mr.get_model(name=de._prefix + "query_model", version=1)
 
         transformer_script_path = os.path.join(
             "/Projects",
@@ -396,7 +381,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             resources={"num_instances": 1},
             transformer=query_transformer,
         )
-        
+
         # Creating deployment for ranking model
         transformer_script_path = os.path.join(
             "/Projects",
@@ -410,8 +395,8 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         )
 
         script_path = os.path.join(
-                    de._ranking_model.version_path, "ranking_model_predictor.py"
-                )
+            de._ranking_model.version_path, "ranking_model_predictor.py"
+        )
         ranking_deployment = de._ranking_model.deploy(
             name=(de._prefix + "ranking_deployment").replace("_", "").lower(),
             script_file=script_path,
@@ -435,7 +420,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             de._kafka_api._delete_topic(de._kafka_topic_name)
         except Exception:
             pass
-        
+
         my_topic = de._kafka_api.create_topic(
             de._kafka_topic_name, de._kafka_schema_name, 1, replicas=1, partitions=1
         )
@@ -463,9 +448,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             "events_consume_job.py",
         )
         spark_config["defaultArgs"] = f"-name {de._name}"
-        job = de._jobs_api.create_job(
-            de._prefix + "events_consume_job", spark_config
-        )
+        job = de._jobs_api.create_job(de._prefix + "events_consume_job", spark_config)
 
 
 class SearchDecisionEngineEngine(DecisionEngineEngine):
