@@ -267,14 +267,14 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         mr_query_model.save("query_model")
 
         # Creating Ranking model placeholder
-        placeholder_model = decision_engine_model.RandomPredictor()
-        placeholder_model.save("ranking_model")
+        # placeholder_model = decision_engine_model.RandomPredictor()
+        # placeholder_model.save("ranking_model")
 
-        mr_ranking_model = de._mr.python.create_model(
-            name=de._prefix + "ranking_model",
-            description="Ranking model that scores item candidates",
-        )
-        mr_ranking_model.save("ranking_model")
+        # mr_ranking_model = de._mr.python.create_model(
+        #     name=de._prefix + "ranking_model",
+        #     description="Ranking model that scores item candidates",
+        # )
+        # mr_ranking_model.save("ranking_model")
 
         # Creating Redirect model for events redirect to Kafka
         de._redirect_model = de._mr.python.create_model(
@@ -384,25 +384,25 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
 
         # Creating deployment for ranking model
         
-        mr_ranking_model = de._mr.get_model(name=de._prefix + "ranking_model", version=1)
+        # mr_ranking_model = de._mr.get_model(name=de._prefix + "ranking_model", version=1)
 
-        transformer_script_path = os.path.join(
-            "/Projects",
-            de._client._project_name,
-            "Resources",
-            "decision-engine",
-            "ranking_model_transformer.py",
-        )
-        ranking_transformer = Transformer(
-            script_file=transformer_script_path, resources={"num_instances": 1}
-        )
+        # transformer_script_path = os.path.join(
+        #     "/Projects",
+        #     de._client._project_name,
+        #     "Resources",
+        #     "decision-engine",
+        #     "ranking_model_transformer.py",
+        # )
+        # ranking_transformer = Transformer(
+        #     script_file=transformer_script_path, resources={"num_instances": 1}
+        # )
         
-        ranking_deployment = mr_ranking_model.deploy(
-            name=(de._prefix + "ranking_deployment").replace("_", "").lower(),
-            description="Deployment that searches for item candidates and scores them based on session context and query embedding",
-            resources={"num_instances": 1},
-            transformer=ranking_transformer,
-        )
+        # ranking_deployment = mr_ranking_model.deploy(
+        #     name=(de._prefix + "ranking_deployment").replace("_", "").lower(),
+        #     description="Deployment that searches for item candidates and scores them based on session context and query embedding",
+        #     resources={"num_instances": 1},
+        #     transformer=ranking_transformer,
+        # )
 
         # Creating deployment for redirect events endpoint
         redirector_script_path = os.path.join(
