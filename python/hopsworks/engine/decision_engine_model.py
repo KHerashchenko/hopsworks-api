@@ -122,7 +122,7 @@ class QueryModel(tf.keras.Model):
     
     
 class RandomPredictor:
-    def predict(self, inputs):
+    def call(self, inputs):
         n = len(inputs[0])
         return [[random.random()] for _ in range(n)]
     
