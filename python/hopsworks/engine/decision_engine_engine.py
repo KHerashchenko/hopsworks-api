@@ -268,7 +268,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
 
         # Creating Ranking model placeholder
         placeholder_model = decision_engine_model.RandomPredictor()
-        placeholder_model.save("ranking_model/ranking_model.pkl")
+        placeholder_model.save("ranking_model")
 
         de._ranking_model = de._mr.python.create_model(
             name=de._prefix + "ranking_model",

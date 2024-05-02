@@ -1,3 +1,4 @@
+import os
 import random
 from typing import List, Dict
 
@@ -125,6 +126,7 @@ class RandomPredictor:
         n = len(inputs[0])
         return [[random.random()] for _ in range(n)]
     
-    def save(self, filepath):
-        # Save the model using joblib
-        joblib.dump(self, filepath)
+    def save(self, model_name):
+        if os.path.isdir(model_name) == False:
+            os.mkdir(model_name)
+        joblib.dump(self, model_name + '/' + model_name + '.pkl')
