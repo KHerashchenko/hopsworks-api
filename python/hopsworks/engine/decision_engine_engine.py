@@ -270,11 +270,11 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         placeholder_model = decision_engine_model.RandomPredictor()
         placeholder_model.save("ranking_model")
 
-        de._ranking_model = de._mr.python.create_model(
+        mr_ranking_model = de._mr.python.create_model(
             name=de._prefix + "ranking_model",
             description="Ranking model that scores item candidates",
         )
-        de._ranking_model.save("ranking_model")
+        mr_ranking_model.save("ranking_model")
 
         # Creating Redirect model for events redirect to Kafka
         de._redirect_model = de._mr.python.create_model(
@@ -383,6 +383,9 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         )
 
         # Creating deployment for ranking model
+        
+        mr_ranking_model = de._mr.get_model(name=de._prefix + "ranking_model", version=1)
+
         transformer_script_path = os.path.join(
             "/Projects",
             de._client._project_name,
@@ -393,15 +396,11 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         ranking_transformer = Transformer(
             script_file=transformer_script_path, resources={"num_instances": 1}
         )
-
-        script_path = os.path.join(
-            de._ranking_model.version_path, "ranking_model_predictor.py"
-        )
-        ranking_deployment = de._ranking_model.deploy(
+        
+        ranking_deployment = mr_ranking_model.deploy(
             name=(de._prefix + "ranking_deployment").replace("_", "").lower(),
-            script_file=script_path,
-            resources={"num_instances": 1},
             description="Deployment that searches for item candidates and scores them based on session context and query embedding",
+            resources={"num_instances": 1},
             transformer=ranking_transformer,
         )
 
