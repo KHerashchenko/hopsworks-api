@@ -237,11 +237,23 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         query_model = decision_engine_model.QueryModel(
             vocabulary=pk_index_list, item_space_dim=retrieval_config["item_space_dim"]
         )
+        
+        # Define the input specifications for the instances
+        instances_spec = {
+            "context_item_ids": tf.TensorSpec(
+                shape=(None, None), dtype=tf.string, name="context_item_ids"
+            ),
+        }
 
+        # Get the concrete function for the query_model's compute_emb function using the specified input signatures
+        signatures = query_model.compute_emb.get_concrete_function(
+            instances_spec
+        )
         # Save the query_model along with the concrete function signatures
         tf.saved_model.save(
             query_model,
             "query_model",
+            signatures=signatures,
         )
 
         query_model_schema = ModelSchema(

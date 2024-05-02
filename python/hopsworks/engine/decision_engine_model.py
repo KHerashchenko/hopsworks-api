@@ -116,17 +116,11 @@ class QueryModel(tf.keras.Model):
             tf.keras.layers.GRU(item_space_dim)
         ])
         
-    def call(self, inputs):
-        context_input = tf.reshape(inputs["context_item_ids"], [-1, 10])
-        return self.query_model(context_input)
-    
-    
-class RandomPredictor:
-    def call(self, inputs):
-        n = len(inputs[0])
-        return [[random.random()] for _ in range(n)]
-    
-    def save(self, model_name):
-        if os.path.isdir(model_name) == False:
-            os.mkdir(model_name)
-        joblib.dump(self, model_name + '/' + model_name + '.pkl')
+    @tf.function()
+    def compute_emb(self, instances):
+        # Compute the query embeddings
+        query_emb = self.query_model(instances["context_item_ids"])
+        # Ensure the output is a dictionary of tensors
+        return {
+            "query_emb": query_emb,
+        }
