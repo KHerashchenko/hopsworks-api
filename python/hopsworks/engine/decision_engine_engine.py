@@ -438,7 +438,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
 
     def build_jobs(self, de):
         # The job retraining the models.
-        py_config = de._jobs_api.get_configuration("PYSPARK")
+        py_config = de._jobs_api.get_configuration("PYTHON")
         py_config["appPath"] = os.path.join(
             "/Projects",
             de._client._project_name,
