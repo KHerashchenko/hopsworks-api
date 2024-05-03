@@ -115,7 +115,15 @@ class QueryModel(tf.keras.Model):
             ),
             tf.keras.layers.GRU(item_space_dim)
         ])
-        
+
+    def call(self, instances):
+        # Compute the query embeddings
+        query_emb = self.query_model(instances["context_item_ids"])
+        # Ensure the output is a dictionary of tensors
+        return {
+            "query_emb": query_emb,
+        }
+    
     @tf.function()
     def compute_emb(self, instances):
         # Compute the query embeddings
