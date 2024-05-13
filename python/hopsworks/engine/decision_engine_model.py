@@ -1,9 +1,15 @@
-import os
-import random
 from typing import List, Dict
-
 import tensorflow as tf
-import joblib
+
+try:
+    import tensorflow_recommenders as tfrs
+except ModuleNotFoundError:
+    print("module 'tensorflow-recommenders' is not installed")
+    import pip
+    pip.main(['install', 'tensorflow-recommenders'])
+    import tensorflow_recommenders as tfrs
+    
+BATCH_SIZE = 2048
 
 class ItemCatalogEmbedding(tf.keras.Model):
     """
@@ -63,7 +69,7 @@ class ItemCatalogEmbedding(tf.keras.Model):
             if val["transformation"] in [
                 "numeric",
                 "timestamp",
-            ]:  # TODO change feature engineering for timestamps cause this is fucked
+            ]:  # TODO change feature engineering for timestamps
                 self.normalized_feats[feat] = tf.keras.layers.Normalization(axis=None)
 
         self.fnn = tf.keras.Sequential(
@@ -77,7 +83,7 @@ class ItemCatalogEmbedding(tf.keras.Model):
         # Explicitly name input tensors
         pk_inputs = inputs[self._configs_dict["product_list"]["primary_key"]]
         category_inputs = {feat: inputs[feat] for feat in self.categories_tokenizers}
-        # text_inputs = {feat: inputs[feat] for feat in self.texts_embeddings} # TODO couldnt solve errors with Pooling layer
+        # text_inputs = {feat: inputs[feat] for feat in self.texts_embeddings} # TODO resolve errors with text features - Pooling layer
         numeric_inputs = {feat: inputs[feat] for feat in self.normalized_feats}
 
         layers = [self.pk_embedding(pk_inputs)]
@@ -101,7 +107,6 @@ class ItemCatalogEmbedding(tf.keras.Model):
                 layers.append(tensor)
 
         print("Layers are:", layers)
-        # concatenated_inputs = tf.concat(adjusted_layers, axis=-1) # TODO cant fix dimensions
         outputs = self.fnn(layers[0])
         return outputs
 
@@ -132,3 +137,66 @@ class QueryModel(tf.keras.Model):
         return {
             "query_emb": query_emb,
         }
+        
+class TwoTowerModel(tf.keras.Model):
+    def __init__(self, query_model, item_model, item_ds):
+        super().__init__()
+        self.query_model = query_model
+        self.item_model = item_model
+        self.task = tfrs.tasks.Retrieval(
+            metrics=tfrs.metrics.FactorizedTopK(
+                candidates=item_ds.batch(BATCH_SIZE).map(self.item_model)
+            )
+        )
+
+    def train_step(self, batch) -> tf.Tensor:
+        # Set up a gradient tape to record gradients.
+        with tf.GradientTape() as tape:
+            # Loss computation.
+            item_embeddings = self.item_model(batch)
+            user_embeddings = self.query_model.compute_emb(batch)['query_emb']
+            loss = self.task(
+                user_embeddings,
+                item_embeddings,
+                compute_metrics=False,
+            )
+
+            # Handle regularization losses as well.
+            regularization_loss = sum(self.losses)
+
+            total_loss = loss + regularization_loss
+
+        gradients = tape.gradient(total_loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+
+        metrics = {
+            "loss": loss,
+            "regularization_loss": regularization_loss,
+            "total_loss": total_loss,
+        }
+
+        return metrics
+
+    def test_step(self, batch) -> tf.Tensor:
+        # Loss computation.
+        item_embeddings = self.item_model(batch)
+        user_embeddings = self.query_model(batch)['query_emb']
+
+        loss = self.task(
+            user_embeddings,
+            item_embeddings,
+            compute_metrics=False,
+        )
+
+        # Handle regularization losses as well.
+        regularization_loss = sum(self.losses)
+
+        total_loss = loss + regularization_loss
+
+        metrics = {metric.name: metric.result() for metric in self.metrics}
+        metrics["loss"] = loss
+        metrics["regularization_loss"] = regularization_loss
+        metrics["total_loss"] = total_loss
+
+        return metrics
+    

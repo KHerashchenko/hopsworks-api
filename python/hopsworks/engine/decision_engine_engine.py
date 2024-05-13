@@ -106,7 +106,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         events_fg = de._fs.get_or_create_feature_group(
             name=de._prefix + "events",
             description="Events stream for the Decision Engine project",
-            primary_key=["event_id"],  # TODO autoincrement?
+            primary_key=["event_id"],
             online_enabled=True,
             stream=True,
             version=1,
@@ -125,7 +125,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             Feature(name="event_weight", type="double"),  # event_value multiplier
             Feature(
                 name="longitude", type="double"
-            ),  # TODO does it make sense to normalise session into separate fg?
+            ), 
             Feature(name="latitude", type="double"),
             Feature(name="language", type="string"),
             Feature(name="useragent", type="string"),
@@ -416,6 +416,10 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         )
         py_config["defaultArgs"] = f"-name {de._name}"
         job = de._jobs_api.create_job(de._prefix + "retrain_job", py_config)
+        
+        retrain_config = de._configs_dict['model_configuration']['retrain']
+        cron_schedule = retrain_config['parameter'] if retrain_config['type'] == 'time_based' else "0 0 * * * ?" 
+        job.schedule(cron_expression = cron_schedule)
 
         # The job consuming events from Kafka topic.
         spark_config = de._jobs_api.get_configuration("PYSPARK")
@@ -428,6 +432,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         )
         spark_config["defaultArgs"] = f"-name {de._name}"
         job = de._jobs_api.create_job(de._prefix + "events_consume_job", spark_config)
+        job.schedule(cron_expression = "0 0 23 * * ?")  # TODO should run continuously instead 
 
 
 class SearchDecisionEngineEngine(DecisionEngineEngine):
