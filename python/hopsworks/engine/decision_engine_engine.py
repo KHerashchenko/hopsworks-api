@@ -1,13 +1,9 @@
-import logging
 from abc import ABC, abstractmethod
 
 import os
-import numpy as np
 import pandas as pd
 
 from hsfs.feature import Feature
-from opensearchpy import OpenSearch
-from opensearchpy.helpers import bulk
 
 from hopsworks.engine import decision_engine_model
 import tensorflow as tf
@@ -77,6 +73,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             version=1,
             features=item_features,
         )
+        de._items_fg.save()
         
         ### Creating Items FV ###
         items_fv = de._fs.get_or_create_feature_view(
@@ -148,7 +145,6 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             version=1,
         )
 
-        events_fv.create_training_data(write_options={"use_spark": True}) # TODO why is it here?
         td_version, _ = events_fv.create_train_test_split(
             test_size=0.2,
             description="Models training dataset",

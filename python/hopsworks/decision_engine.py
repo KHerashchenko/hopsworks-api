@@ -2,7 +2,7 @@ import json
 import humps
 
 from hopsworks import client
-from hopsworks.core import opensearch_api, dataset_api, kafka_api, job_api
+from hopsworks.core import dataset_api, kafka_api, job_api
 from hopsworks.engine import decision_engine_engine
 import yaml
 
@@ -27,9 +27,6 @@ class DecisionEngine():
 
         client.init("hopsworks")
         self._client = client.get_instance()
-        self._opensearch_api = opensearch_api.OpenSearchApi(
-            self._client._project_id, self._client._project_name
-        )
         self._dataset_api = dataset_api.DatasetApi(self._client._project_id)
         self._configs_dict = self.load_configs(self._config_file_path)
         
