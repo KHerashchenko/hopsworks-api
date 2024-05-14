@@ -17,6 +17,7 @@ import tensorflow as tf
 from hsml.schema import Schema
 from hsml.model_schema import ModelSchema
 from hsml.transformer import Transformer
+from hsfs import embedding
 
 
 class DecisionEngineEngine(ABC):
@@ -53,23 +54,38 @@ class DecisionEngineEngine(ABC):
 
 class RecommendationDecisionEngineEngine(DecisionEngineEngine):
     def build_feature_store(self, de):
-        # Creating product list FG
         catalog_config = de._configs_dict["product_list"]
-
+        
+        ### Creating Items FG ###
         item_features = [
             Feature(name=feat, type=val["type"])
             for feat, val in catalog_config["schema"].items()
         ]
 
-        items_fg = de._fs.get_or_create_feature_group(
+        emb = embedding.EmbeddingIndex()
+        emb.add_embedding(
+            "embeddings",            
+            de._configs_dict['model_configuration']['retrieval_model']['item_space_dim'], 
+        )
+
+        de._items_fg = de._fs.get_or_create_feature_group(
             name=de._prefix + catalog_config["feature_view_name"],
             description="Catalog for the Decision Engine project",
+            embedding_index=emb,  
             primary_key=[catalog_config["primary_key"]],
             online_enabled=True,
             version=1,
             features=item_features,
         )
+        
+        ### Creating Items FV ###
+        items_fv = de._fs.get_or_create_feature_view(
+            name=de._prefix + catalog_config["feature_view_name"],
+            query=de._items_fg.select_all(),
+            version=1,
+        )
 
+        # Reading items data into Pandas df for later use
         downloaded_file_path = de._dataset_api.download(
             catalog_config["file_path"], overwrite=True
         )
@@ -82,27 +98,19 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
                 if val["type"] == "timestamp"
             ],
         )
-        items_fg.insert(de._catalog_df[catalog_config["schema"].keys()])
-
-        # Creating items FV
-        items_fv = de._fs.get_or_create_feature_view(
-            name=de._prefix + catalog_config["feature_view_name"],
-            query=items_fg.select_all(),
-            version=1,
-        )
 
         # TODO tensorflow errors if col is of type float64, expecting float32
         # TODO where timestamp feature transformation should happen? (converting into unix format)
-        for feat, val in catalog_config["schema"].items():
-            if val["type"] == "float":
-                de._catalog_df[feat] = de._catalog_df[feat].astype("float32")
-            if "transformation" in val.keys() and val["transformation"] == "timestamp":
-                de._catalog_df[feat] = de._catalog_df[feat].astype(np.int64) // 10**9
-        de._catalog_df[catalog_config["primary_key"]] = de._catalog_df[
-            catalog_config["primary_key"]
-        ].astype(str)
+        # for feat, val in catalog_config["schema"].items():
+        #     if val["type"] == "float":
+        #         de._catalog_df[feat] = de._catalog_df[feat].astype("float32")
+        #     if "transformation" in val.keys() and val["transformation"] == "timestamp":
+        #         de._catalog_df[feat] = de._catalog_df[feat].astype(np.int64) // 10**9
+        # de._catalog_df[catalog_config["primary_key"]] = de._catalog_df[
+        #     catalog_config["primary_key"]
+        # ].astype(str)
 
-        # Creating events FG
+        ### Creating Events FG ###
         events_fg = de._fs.get_or_create_feature_group(
             name=de._prefix + "events",
             description="Events stream for the Decision Engine project",
@@ -112,7 +120,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             version=1,
         )
 
-        # initialize with all possible context features even if user dropped some of them in config
+        # Enforced schema for context features in Events FG
         events_features = [
             Feature(name="event_id", type="bigint"),
             Feature(name="session_id", type="string"),
@@ -121,7 +129,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             Feature(name="event_type", type="string"),
             Feature(
                 name="event_value", type="double"
-            ),  # e.g. 0 or 1 for click, price for purchase
+            ),  # e.g. 0 or 1 for click, float for purchase (price)
             Feature(name="event_weight", type="double"),  # event_value multiplier
             Feature(
                 name="longitude", type="double"
@@ -133,21 +141,21 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
 
         events_fg.save(features=events_features)
 
-        # Creating events FV
+        ### Creating Events FV ###
         events_fv = de._fs.get_or_create_feature_view(
             name=de._prefix + "events",
             query=events_fg.select_all(),
             version=1,
         )
 
-        events_fv.create_training_data(write_options={"use_spark": True})
+        events_fv.create_training_data(write_options={"use_spark": True}) # TODO why is it here?
         td_version, _ = events_fv.create_train_test_split(
             test_size=0.2,
             description="Models training dataset",
             write_options={"wait_for_job": True},
         )
 
-        # Creating decisions FG
+        ### Creating Decisions FG ###
         decisions_fg = de._fs.get_or_create_feature_group(
             name=de._prefix + "decisions",
             description="Decisions logging for the Decision Engine project",
@@ -156,23 +164,24 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             version=1,
         )
 
+        # Enforced schema for decisions logging in Decisions FG
         decisions_features = [
             Feature(name="decision_id", type="bigint"),
             Feature(name="session_id", type="string"),
             Feature(
                 name="session_activity",
-                type=f"ARRAY <{catalog_config['schema'][catalog_config['primary_key']]['type']}>",
+                type=f"ARRAY <string>",
             ),  # item ids that user interacted with (all event types)
             Feature(
                 name="predicted_items",
-                type=f"ARRAY <{catalog_config['schema'][catalog_config['primary_key']]['type']}>",
+                type=f"ARRAY <string>",
             ),  # item ids received by getDecision
         ]
-
         decisions_fg.save(features=decisions_features)
 
     def build_models(self, de):
-        # Creating candidate model
+        
+        ### Creating Candidate Model ###
         catalog_config = de._configs_dict["product_list"]
         retrieval_config = de._configs_dict["model_configuration"]["retrieval_model"]
 
@@ -197,6 +206,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             de._configs_dict, pk_index_list, categories_lists
         )
 
+        # Adapting features to the items data
         for feat, val in catalog_config["schema"].items():
             if "transformation" not in val.keys():
                 continue
@@ -211,6 +221,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
 
         tf.saved_model.save(de._candidate_model, "candidate_model")
 
+        # Registering Candidate Model
         candidate_model_schema = ModelSchema(
             input_schema=Schema(de._catalog_df),
             output_schema=Schema(
@@ -227,13 +238,13 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
 
         candidate_model = de._mr.tensorflow.create_model(
             name=de._prefix + "candidate_model",
-            description="Model that generates embeddings from items catalog features",
+            description="Model that generates embeddings from item features",
             input_example=candidate_example,
             model_schema=candidate_model_schema,
         )
         candidate_model.save("candidate_model")
 
-        # Creating query model
+        ### Creating Query Model ###
         query_model = decision_engine_model.QueryModel(
             vocabulary=pk_index_list, item_space_dim=retrieval_config["item_space_dim"]
         )
@@ -256,6 +267,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             signatures=signatures,
         )
 
+        # Registering Query Model
         query_model_schema = ModelSchema(
             input_schema=Schema(
                 de._catalog_df.head()[de._configs_dict["product_list"]["primary_key"]]
@@ -278,10 +290,10 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         )
         mr_query_model.save("query_model")
 
-        # Creating Redirect model for events redirect to Kafka
+        ### Creating Redirect model for events redirect to Kafka ###
         de._redirect_model = de._mr.python.create_model(
             de._prefix + "events_redirect",
-            description="Workaround model for redirecting events into Kafka",
+            description="Model for redirecting events into Kafka",
         )
         redirector_script_path = os.path.join(
             "/Projects",
@@ -293,74 +305,17 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         de._redirect_model.save(redirector_script_path, keep_original_files=True)
 
     def build_vector_db(self, de):
-        # Creating Opensearch index
-        os_client = OpenSearch(**de._opensearch_api.get_default_py_config())
-        catalog_config = de._configs_dict["product_list"]
-        retrieval_config = de._configs_dict["model_configuration"]["retrieval_model"]
-
-        index_name = de._opensearch_api.get_project_index(
-            catalog_config["feature_view_name"]
-        )
-        index_exists = os_client.indices.exists(index_name)
-        # dev:
-        if index_exists:
-            os_client.indices.delete(index_name)
-            index_exists = False
-
-        if not index_exists:
-            logging.info(
-                f"Opensearch index name {index_name} does not exist. Creating."
-            )
-            index_body = {
-                "settings": {
-                    "knn": True,
-                    "knn.algo_param.ef_search": 100,
-                },
-                "mappings": {
-                    "properties": {
-                        de._prefix
-                        + "vector": {
-                            "type": "knn_vector",
-                            "dimension": retrieval_config["item_space_dim"],
-                            "method": {
-                                "name": "hnsw",
-                                "space_type": "innerproduct",
-                                "engine": "faiss",
-                                "parameters": {"ef_construction": 256, "m": 48},
-                            },
-                        }
-                    }
-                },
-            }
-            os_client.indices.create(index_name, body=index_body)
 
         items_ds = tf.data.Dataset.from_tensor_slices(
             {col: de._catalog_df[col] for col in de._catalog_df}
         )
 
         item_embeddings = items_ds.batch(2048).map(
-            lambda x: (x[catalog_config["primary_key"]], de._candidate_model(x))
+            lambda x: (x[de._configs_dict["product_list"]["primary_key"]], de._candidate_model(x))
         )
-
-        actions = []
-
-        for batch in item_embeddings:
-            item_id_list, embedding_list = batch
-            item_id_list = item_id_list.numpy().astype(int)
-            embedding_list = embedding_list.numpy()
-
-            for item_id, embedding in zip(item_id_list, embedding_list):
-                actions.append(
-                    {
-                        "_index": index_name,
-                        "_id": item_id,
-                        "_source": {
-                            de._prefix + "vector": embedding,
-                        },
-                    }
-                )
-        logging.info(f"Example item vectors to be bulked: {actions[:10]}")
-        bulk(os_client, actions)
+        all_embeddings_list = tf.concat([batch[1] for batch in item_embeddings], axis=0).numpy().tolist()
+        de._catalog_df['embeddings'] = all_embeddings_list
+        de._items_fg.insert(de._catalog_df[list(de._configs_dict["product_list"]["schema"].keys()) + ['embeddings']])
 
     def build_deployments(self, de):
         # Creating deployment for query model

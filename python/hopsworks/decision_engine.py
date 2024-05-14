@@ -21,6 +21,7 @@ class DecisionEngine():
         
         self._prefix = "de_" + self._name + "_"
         self._catalog_df = None
+        self._items_fg = None
         self._retrieval_model = None
         self._redirect_model = None
 
