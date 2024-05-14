@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 import os
+import numpy as np
 import pandas as pd
 
 from hsfs.feature import Feature
@@ -98,14 +99,14 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
 
         # TODO tensorflow errors if col is of type float64, expecting float32
         # TODO where timestamp feature transformation should happen? (converting into unix format)
-        # for feat, val in catalog_config["schema"].items():
-        #     if val["type"] == "float":
-        #         de._catalog_df[feat] = de._catalog_df[feat].astype("float32")
-        #     if "transformation" in val.keys() and val["transformation"] == "timestamp":
-        #         de._catalog_df[feat] = de._catalog_df[feat].astype(np.int64) // 10**9
-        # de._catalog_df[catalog_config["primary_key"]] = de._catalog_df[
-        #     catalog_config["primary_key"]
-        # ].astype(str)
+        for feat, val in catalog_config["schema"].items():
+            if val["type"] == "float":
+                de._catalog_df[feat] = de._catalog_df[feat].astype("float32")
+            if "transformation" in val.keys() and val["transformation"] == "timestamp":
+                de._catalog_df[feat] = de._catalog_df[feat].astype(np.int64) // 10**9
+        de._catalog_df[catalog_config["primary_key"]] = de._catalog_df[
+            catalog_config["primary_key"]
+        ].astype(str)
 
         ### Creating Events FG ###
         events_fg = de._fs.get_or_create_feature_group(
