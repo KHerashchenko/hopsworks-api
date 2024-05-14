@@ -162,7 +162,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             catalog_config["file_path"], overwrite=True
         )
 
-        catalog_df = pd.read_csv(
+        de._catalog_df = pd.read_csv(
             downloaded_file_path,
             parse_dates=[
                 feat
@@ -170,7 +170,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
                 if val["type"] == "timestamp"
             ],
         )
-        catalog_df[catalog_config["primary_key"]] = catalog_df[
+        de._catalog_df[catalog_config["primary_key"]] = de._catalog_df[
             catalog_config["primary_key"]
         ].astype(str)
 
@@ -178,12 +178,12 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         # TODO where timestamp feature transformation should happen? (converting into unix format) - it is used in candidate model
         for feat, val in catalog_config["schema"].items():
             if val["type"] == "float":
-                catalog_df[feat] = catalog_df[feat].astype("float32")
+                de._catalog_df[feat] = de._catalog_df[feat].astype("float32")
             if "transformation" in val.keys() and val["transformation"] == "timestamp":
-                catalog_df[feat] = catalog_df[feat].astype(np.int64) // 10**9
+                de._catalog_df[feat] = de._catalog_df[feat].astype(np.int64) // 10**9
         
         pk_index_list = (
-            catalog_df[de._configs_dict["product_list"]["primary_key"]]
+            de._catalog_df[de._configs_dict["product_list"]["primary_key"]]
             .unique()
             .tolist()
         )
@@ -194,10 +194,10 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
                 continue
             if val["transformation"] == "category":
                 categories_lists[feat] = (
-                    catalog_df[feat].astype(str).unique().tolist()
+                    de._catalog_df[feat].astype(str).unique().tolist()
                 )
             elif val["transformation"] == "text":
-                text_features[feat] = catalog_df[feat].tolist()
+                text_features[feat] = de._catalog_df[feat].tolist()
                 
         ### Creating Candidate Model ###
         de._candidate_model = decision_engine_model.ItemCatalogEmbedding(
@@ -210,7 +210,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
                 continue
             if val["transformation"] in ["numeric", "timestamp"]:
                 de._candidate_model.normalized_feats[feat].adapt(
-                    catalog_df[feat].tolist()
+                    de._catalog_df[feat].tolist()
                 )
             # elif val["transformation"] == "text":
             #     de._candidate_model.texts_embeddings[feat].layers[0].adapt(
@@ -221,7 +221,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
 
         # Registering Candidate Model
         candidate_model_schema = ModelSchema(
-            input_schema=Schema(catalog_df),
+            input_schema=Schema(de._catalog_df),
             output_schema=Schema(
                 [
                     {
@@ -232,7 +232,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
                 ]
             ),
         )
-        candidate_example = catalog_df.sample().to_dict("records")
+        candidate_example = de._catalog_df.sample().to_dict("records")
 
         candidate_model = de._mr.tensorflow.create_model(
             name=de._prefix + "candidate_model",
@@ -268,7 +268,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         # Registering Query Model
         query_model_schema = ModelSchema(
             input_schema=Schema(
-                catalog_df.head()[de._configs_dict["product_list"]["primary_key"]]
+                de._catalog_df.head()[de._configs_dict["product_list"]["primary_key"]]
             ),
             output_schema=Schema(
                 [
@@ -303,33 +303,27 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         de._redirect_model.save(redirector_script_path, keep_original_files=True)
 
     def build_vector_db(self, de):
-        catalog_config = de._configs_dict["product_list"]
-        
-        # Reading items data into Pandas df
-        downloaded_file_path = de._dataset_api.download(
-            catalog_config["file_path"], overwrite=True
-        )
-
-        catalog_df = pd.read_csv(
-            downloaded_file_path,
-            parse_dates=[
-                feat
-                for feat, val in catalog_config["schema"].items()
-                if val["type"] == "timestamp"
-            ],
-        )
-        catalog_df[catalog_config["primary_key"]] = catalog_df[
-            catalog_config["primary_key"]
-        ].astype(str)
         
         items_ds = tf.data.Dataset.from_tensor_slices(
-            {col: catalog_df[col] for col in catalog_df}
+            {col: de._catalog_df[col] for col in de._catalog_df}
         )
-
         item_embeddings = items_ds.batch(2048).map(
             lambda x: (x[de._configs_dict["product_list"]["primary_key"]], de._candidate_model(x))
         )
         all_embeddings_list = tf.concat([batch[1] for batch in item_embeddings], axis=0).numpy().tolist()
+        
+        # Reading items data into Pandas df
+        downloaded_file_path = de._dataset_api.download(
+            de._configs_dict["product_list"]["file_path"], overwrite=True
+        )
+        catalog_df = pd.read_csv(
+            downloaded_file_path,
+            parse_dates=[
+                feat
+                for feat, val in de._configs_dict["product_list"]["schema"].items()
+                if val["type"] == "timestamp"
+            ],
+        )
         catalog_df['embeddings'] = all_embeddings_list
         de._items_fg.insert(catalog_df[list(de._configs_dict["product_list"]["schema"].keys()) + ['embeddings']])
 
