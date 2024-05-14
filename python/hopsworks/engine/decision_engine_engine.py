@@ -66,7 +66,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             de._configs_dict['model_configuration']['retrieval_model']['item_space_dim'], 
         )
 
-        de._items_fg = de._fs.get_or_create_feature_group(
+        de._items_fg = de._fs.create_feature_group(
             name=de._prefix + catalog_config["feature_view_name"],
             description="Catalog for the Decision Engine project",
             embedding_index=emb,  
@@ -78,14 +78,14 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         de._items_fg.save()
         
         ### Creating Items FV ###
-        items_fv = de._fs.get_or_create_feature_view(
+        items_fv = de._fs.create_feature_view(
             name=de._prefix + catalog_config["feature_view_name"],
             query=de._items_fg.select_all(),
             version=1,
         )
 
         ### Creating Events FG ###
-        events_fg = de._fs.get_or_create_feature_group(
+        events_fg = de._fs.create_feature_group(
             name=de._prefix + "events",
             description="Events stream for the Decision Engine project",
             primary_key=["event_id"],
@@ -116,7 +116,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         events_fg.save(features=events_features)
 
         ### Creating Events FV ###
-        events_fv = de._fs.get_or_create_feature_view(
+        events_fv = de._fs.create_feature_view(
             name=de._prefix + "events",
             query=events_fg.select_all(),
             version=1,
@@ -129,7 +129,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         )
 
         ### Creating Decisions FG ###
-        decisions_fg = de._fs.get_or_create_feature_group(
+        decisions_fg = de._fs.create_feature_group(
             name=de._prefix + "decisions",
             description="Decisions logging for the Decision Engine project",
             primary_key=["decision_id", "session_id"],
