@@ -312,7 +312,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         )
         all_embeddings_list = tf.concat([batch[1] for batch in item_embeddings], axis=0).numpy().tolist()
         
-        # Reading items data into Pandas df
+        # Reading items data into Pandas df to insert into Items FG
         downloaded_file_path = de._dataset_api.download(
             de._configs_dict["product_list"]["file_path"], overwrite=True
         )
@@ -325,6 +325,9 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             ],
         )
         catalog_df['embeddings'] = all_embeddings_list
+        catalog_df[de._configs_dict["product_list"]["primary_key"]] = catalog_df[
+            de._configs_dict["product_list"]["primary_key"]
+        ].astype(str)
         de._items_fg.insert(catalog_df[list(de._configs_dict["product_list"]["schema"].keys()) + ['embeddings']])
 
     def build_deployments(self, de):
