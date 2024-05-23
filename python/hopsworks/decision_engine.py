@@ -1,4 +1,5 @@
 import json
+import os
 import humps
 
 from hopsworks import client
@@ -90,6 +91,16 @@ class DecisionEngine():
         return json.dumps(self.to_dict())
     
     def setup(self):
+        dependencies_file_path = os.path.join(
+            "/Projects",
+            self._client._project_name,
+            "Resources",
+            "decision-engine",
+            "requirements.txt",
+        )
+        env = self._env_api.get_environment()
+        env.install_requirements(dependencies_file_path)
+        
         self._decision_engine_engine.setup_decision_engine(self)
 
     @property

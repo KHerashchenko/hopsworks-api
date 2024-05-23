@@ -22,16 +22,6 @@ class DecisionEngineEngine(ABC):
         pass
 
     def setup_decision_engine(self, de):
-        
-        dependencies_file_path = os.path.join(
-            "/Projects",
-            de._client._project_name,
-            "Resources",
-            "decision-engine",
-            "requirements.txt",
-        )
-        de._env_api.install_requirements(dependencies_file_path)
-        
         self.build_feature_store(de)
         self.build_models(de)
         self.build_vector_db(de)
