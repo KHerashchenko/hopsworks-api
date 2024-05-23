@@ -2,7 +2,7 @@ import json
 import humps
 
 from hopsworks import client
-from hopsworks.core import dataset_api, kafka_api, job_api
+from hopsworks.core import dataset_api, kafka_api, job_api, environment_api
 from hopsworks.engine import decision_engine_engine
 import yaml
 
@@ -36,7 +36,9 @@ class DecisionEngine():
         self._jobs_api = job_api.JobsApi(
             self._client._project_id, self._client._project_name
         )
-
+        self._env_api = environment_api.EnvironmentApi(
+            self._client._project_id, self._client._project_name
+        )
         self._fs = hsfs_conn().get_feature_store(
             self._client._project_name + "_featurestore"
         )

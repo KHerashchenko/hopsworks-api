@@ -1,13 +1,7 @@
 from typing import List, Dict
 import tensorflow as tf
 
-try:
-    import tensorflow_recommenders as tfrs
-except ModuleNotFoundError:
-    print("module 'tensorflow-recommenders' is not installed")
-    import pip
-    pip.main(['install', 'tensorflow-recommenders'])
-    import tensorflow_recommenders as tfrs
+import tensorflow_recommenders as tfrs
     
 BATCH_SIZE = 2048
 
