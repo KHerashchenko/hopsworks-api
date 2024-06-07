@@ -58,7 +58,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
             Feature(name=feat, type=val["type"])
             for feat, val in catalog_config["schema"].items()
         ]
-        item_features.append(Feature(name='embeddings', type="ARRAY <double>"))
+        item_features.append(Feature(name='embeddings', type="ARRAY<double>"))
 
         emb = embedding.EmbeddingIndex()
         emb.add_embedding(
