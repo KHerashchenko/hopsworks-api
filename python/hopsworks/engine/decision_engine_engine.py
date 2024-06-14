@@ -386,7 +386,7 @@ class RecommendationDecisionEngineEngine(DecisionEngineEngine):
         job = de._jobs_api.create_job(de._prefix + "retrain_job", py_config)
         
         retrain_config = de._configs_dict['model_configuration']['retrain']
-        cron_schedule = retrain_config['parameter'] if retrain_config['type'] == 'time_based' else "0 0 * * * ?" 
+        cron_schedule = retrain_config['parameter'] if retrain_config['type'] == 'time_based' else "0 0 0 * * ?" 
         job.schedule(cron_expression = cron_schedule)
 
         # The job consuming events from Kafka topic.
